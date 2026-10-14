@@ -68,6 +68,53 @@ struct st_rf_table def_rf_conf_table = {
                     0,       
 };
 
+struct st_rf_table hipower_rf_conf_table = {
+                    /* Signature */
+                    RF_API_SIGNATURE,
+                    /* Structure version */
+                    RF_API_TABLE_VERSION,
+                    /* boot flag */
+                    EN_FIRST_BOOT,
+                    /* work mode */
+                    EN_WORK_NOMAL,
+                    /* reserved */
+                    0,
+                    /* reserved */
+                    0,
+                    /* thermal config */
+                    {
+                        { { 21,  21 ,21,  21,  21,  21,  21} , 0x87, 0x87,  0,  0,  0,  0,  0,  0,  0 },
+                        { { 21,  21 ,21,  21,  21,  21,  21} , 0x87, 0x87,  0,  0,  0,  0,  0,  0,  0 },
+                        { { 21,  21 ,21,  21,  21,  21,  21} , 0x87, 0x87,  0,  0,  0,  0,  0,  0,  0 },
+                        { { 21,  21 ,21,  21,  21,  21,  21} , 0x87, 0x87,  0,  0,  0,  0,  0,  0,  0 },
+                        { { 21,  21 ,21,  21,  21,  21,  21} , 0x87, 0x87,  0,  0,  0,  0,  0,  0,  0 },
+                    },
+                    /* ble thermal config */
+                    {
+                        { { 6,  6} , { 0,  0} },
+                        { { 6,  6} , { 0,  0} },
+                        { { 6,  6} , { 0,  0} },
+                        { { 6,  6} , { 0,  0} },
+                        { { 6,  6} , { 0,  0} },
+                    },
+                    /* temperature boundarty */
+                    { -15, 10, 55, 90},
+                    /* rate gain table */
+                    { 
+                        {18, 18, 17, 16, 15, 18, 17, 16, 15, 18, 17, 16, 15 ,
+                          18, 17, 16, 15, 13, 18, 17, 16, 15, 12, 18, 17, 16, 15, 13, 18, 17, 16, 15, 12},
+                        {0, 0, 0, 0, 0, 0, 0}
+                    },
+                    /*abs power*/
+                    15,
+                    /*ble DTM mode*/
+                    0,
+                    /* DCDC flag */
+                    1,
+                    /* padpd flag*/
+                    0,       
+};
+
 #define  OFDM_RATE_GAIN_256QAM_OFFSET        (-2)
 #define OFDM_RATE_GAIN_64QAM_OFFSET         (0)
 #define OFDM_RATE_GAIN_16QAM_OFFSET         (1)
@@ -480,7 +527,10 @@ void ssv_chg_ref_power(struct ssv_hw *sh, u8 ref_power)
 int ssv_update_rf_conf_table(struct ssv_hw *sh)
 {
     //load default table ,poritory 1. bin, 2. efuse, 3. default
-    memcpy(&sh->rf_conf_table, &def_rf_conf_table, sizeof(struct st_rf_table) );
+    if(ssv_cfg.apply_high_power == 1)
+        memcpy(&sh->rf_conf_table, &hipower_rf_conf_table, sizeof(struct st_rf_table) );
+    else
+        memcpy(&sh->rf_conf_table, &def_rf_conf_table, sizeof(struct st_rf_table) );
 
     return 0;
 }
@@ -511,7 +561,8 @@ int ssv_set_pll_phy_rf(struct ssv_hw *sh)
     //rf_cali.disable_cci = (true == sh->cfg.disable_cci) ? 1 : 0;
     //rf_cali.xtal = ssv6020_turismoE_update_xtal(sh);
     //rf_cali.bus_clk = 120; 
-    
+    rf_cali.dsss_power = ssv_cfg.dsss_pwr;
+    rf_cali.ofdm_power = ssv_cfg.ofdm_pwr;
     // update rf table 
     memcpy(&rf_cali.rf_table, &sh->rf_conf_table, sizeof(struct st_rf_table));
     // dcdc
@@ -1376,6 +1427,63 @@ void ssv_6030_rfble(struct ssv_hw *sh, int argc, char *argv[])
     }
     
     return;
+}
+
+u32 g_runpower_level = 2; //def
+
+void ssv_6030_update_rf(struct ssv_hw *sh, int argc, char *argv[])
+{
+    u32 index;
+    //u32 i, j; //Keep it for backup
+    u32 inpower_level = 0;
+    s8 power_abs_offset = 0;
+    s8 power_level_offset[3] = {-1, 0, 1};
+    char *endp;
+    struct ssv_cmd_data *cmd_data = &sh->cmd_data;
+
+    if (!strcmp(argv[1], "change")) 
+    {
+        if (argc != 4) {
+            snprintf_res(cmd_data,"\n rftable change value\n");
+            return;
+        }
+
+        inpower_level = simple_strtoul(argv[3], &endp, 0);
+        SSV_LOG_DBG("---function=%s,line=%d,inpower_level = %d --- \n",__FUNCTION__,__LINE__,inpower_level);
+        if ((inpower_level < 1) || (inpower_level > 3)) {
+            snprintf_res(cmd_data,"\n change range 1 ~ 3\n");
+            return;
+        }
+        
+        power_abs_offset = power_level_offset[inpower_level - 1] - power_level_offset[g_runpower_level - 1];
+        SSV_LOG_DBG("---power_abs_offset=%d,input power offset=%d,run power offset = %d--- \n",
+                  power_abs_offset,power_level_offset[inpower_level - 1],power_level_offset[g_runpower_level - 1]);
+
+        if((power_abs_offset >= -2) && (power_abs_offset <= 2))
+        {   
+            for (index = 0; index < 33;index++){
+                sh->rf_conf_table.rate_gain_table.gain[index] += power_abs_offset;
+            }
+            #if 0 //Keep it for backup
+            for (i=0; i < RF_THREMAL_TABLE_NUM;i++){
+                for (j=0; j < 7;j++){
+                    sh->rf_conf_table.rf_config[i].band_gain[j] += power_abs_offset;
+                }
+            }
+            #endif
+
+            ssv_set_rf_conf_table(sh);
+            g_runpower_level = inpower_level;
+        }else{
+            snprintf_res(cmd_data,"\n unknow power offset range: %x\n", power_abs_offset);
+        }
+    }
+    else
+    {
+        snprintf_res(cmd_data, 
+                "\n\t./cli updaterf change value x(1~3)\n");
+        return;
+    }
 }
 
 int ssv_res_rf_update_to_cfg(void* param)

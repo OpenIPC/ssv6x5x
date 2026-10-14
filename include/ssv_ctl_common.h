@@ -52,6 +52,8 @@ extern "C" {
 #define WIFI_DRV_CMD_HDR_LEN            ((size_t)(((ST_WIFI_DRV_CMD *)0)->data))
 #define WIFI_DRV_EVT_HDR_LEN            ((size_t)(((ST_WIFI_DRV_EVT *)0)->data))
 
+#define BLE_DRV_CMD_HDR_LEN             ((size_t)(((ST_BLE_DRV_CMD *)0)->data))
+
 /*******************************************************************************
  *         Enumerations
  ******************************************************************************/
@@ -65,6 +67,9 @@ typedef enum _en_ssv_ctl_cmd
     E_SSV_CTL_CMD_SSV_NIMBLE_DISABLE,
     E_SSV_CTL_CMD_TO_SSV_NIMBLE,
     E_SSV_CTL_CMD_FROM_SSV_NIMBLE,
+    E_SSV_CTL_CMD_TO_SSV_BLE_DRV,
+    E_SSV_CTL_CMD_TO_SSV_BLE_LL,
+    E_SSV_CTL_CMD_FROM_SSV_BLE_LL,
     E_SSV_CTL_CMD_MAX                       ///< Maximum.
 } EN_SSV_CTL_CMD;
 
@@ -78,6 +83,9 @@ typedef enum _en_ssv_ctl_attr
     E_SSV_CTL_ATTR_SSV_NIMBLE_DISABLE,        ///< NIMBLE
     E_SSV_CTL_ATTR_TO_SSV_NIMBLE,             ///< NIMBLE
     E_SSV_CTL_ATTR_FROM_SSV_NIMBLE,           ///< NIMBLE
+    E_SSV_CTL_ATTR_TO_SSV_BLE_DRV,          ///< BLE driver
+    E_SSV_CTL_ATTR_TO_SSV_BLE_LL,           ///< BLE link-layer
+    E_SSV_CTL_ATTR_FROM_SSV_BLE_LL,         ///< BLE link-layer
     E_SSV_CTL_ATTR_MAX                      ///< Maximum.
 } EN_SSV_CTL_ATTR;
 
@@ -107,6 +115,18 @@ typedef enum _en_ssv_wpas_ctl_attr
     E_SSV_WPAS_CTL_ATTR_EXTAUTH_RSP,        ///< External Auth require.
     E_SSV_WPAS_CTL_ATTR_MAX                 ///< Maximum.
 } EN_SSV_WPAS_CTL_ATTR;
+
+///SSV BLE driver command
+typedef enum _en_ssv_ble_drv_cmd
+{
+    E_SSV_BLE_DRV_CMD_UNSPEC,
+    E_SSV_BLE_DRV_CMD_NETLINK_ENABLE,
+    E_SSV_BLE_DRV_CMD_NETLINK_DISABLE,
+    E_SSV_BLE_DRV_CMD_INIT,
+    E_SSV_BLE_DRV_CMD_SET_SCAN_SWLIST,
+    E_SSV_BLE_DRV_CMD_DEINIT,
+    E_SSV_BLE_DRV_CMD_MAX
+} EN_SSV_BLE_DRV_CMD;
 
 
 /*******************************************************************************
@@ -139,6 +159,16 @@ typedef struct st_wifi_reg_param
     unsigned int address;
     unsigned int value;
 }SSV_PACKED_STRUCT_STRUCT ST_WIFI_REG_PARAM;
+SSV_PACKED_STRUCT_END
+
+/// Structure of SSV control driver command. .
+SSV_PACKED_STRUCT_BEGIN
+typedef struct st_ble_drv_cmd
+{
+    unsigned int cmdid;
+    unsigned int datalen;
+    unsigned char data[0];
+}SSV_PACKED_STRUCT_STRUCT ST_BLE_DRV_CMD;
 SSV_PACKED_STRUCT_END
 
 

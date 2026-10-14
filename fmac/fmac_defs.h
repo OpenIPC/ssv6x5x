@@ -144,6 +144,7 @@ struct ssv_vif {
     struct ieee80211_channel chan_setting;
     enum nl80211_channel_type chan_type_setting;
     struct ssv_key key[6];
+    atomic_t drv_conn_state;
     u8 drv_vif_index;           /* Identifier of the VIF in driver */
     //u8 vif_index;               /* Identifier of the station in FW */
     u8 ch_index;                /* Channel context identifier */
@@ -215,6 +216,18 @@ struct ssv_sta_ps {
     u16 sp_cnt[2];
 };
 
+union ssv_rate_config_info {
+    struct {
+        u16 mcsIndexTx      : 7;
+        u16 bwTx            : 2;
+        u16 shortGITx       : 1;
+        u16 preTypeTx       : 1;
+        u16 formatModTx     : 3;
+        u16 ignore          : 2;
+    };
+    u16 value;
+};
+
 /*
  * Structure used to save information relative to the managed stations.
  */
@@ -251,10 +264,12 @@ struct ssv_sta {
     u32 ac_param[4];  /* EDCA parameters */
     struct reord_info_tag reord_info;
     uint16_t rx_last_seqcntl[TID_MAX];
-
+    uint16_t rx_last_seqcntl_noqos[TID_NOQOS_KEY_IDX_MAX];
     u32 last_rx;
     unsigned long probe_timestamp;
     bool port_control; /* Flag for IEEE 802.1X */
+    union ssv_rate_config_info  rate_config;    //[15:14] Protection, [13:11] Modulation, [10:9] Guard Interval, [8:7] Bandwidth, [6:0] MCS index
+    
 };
 
 struct ssv_sec_phy_chan {
@@ -304,8 +319,15 @@ enum ssv_ap_flags
  * 
  * @SSV_STA_EXT_AUTH: External authentication is in progress
  */
-enum rwnx_sta_flags {
+enum ssv_sta_flags {
     SSV_STA_EXT_AUTH = BIT(0),
+};
+
+enum ssv_drv_connect_status {
+    SSV_DRV_STATUS_DISCONNECTED = 0,
+    SSV_DRV_STATUS_DISCONNECTING,
+    SSV_DRV_STATUS_CONNECTING,
+    SSV_DRV_STATUS_CONNECTED
 };
 
 struct ssv_agg_reord_pkt {

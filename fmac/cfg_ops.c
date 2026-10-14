@@ -410,6 +410,11 @@ static int ssv_cfg80211_scan(struct wiphy *wiphy,
     int ret = 0;
 
     SSV_LOG_DBG("[%s][%d]\n", __FUNCTION__, __LINE__);
+    
+    if ((int)SSV_DRV_STATUS_CONNECTING == (int)atomic_read(&ssv_vif->drv_conn_state)) {
+        SSV_LOG_DBG("%s, in connecting\n", __FUNCTION__);
+        return -EBUSY;
+    } 
 
     if(ssv_get_engmode())
     {
@@ -597,9 +602,20 @@ static int ssv_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
     struct sm_connect_cfm sm_connect_cfm;
     int error = 0;
 
-RETRY_CONNECT:
     SSV_LOG_DBG("[%s][%d]\n", __FUNCTION__, __LINE__);
+   
+    if ((int)SSV_DRV_STATUS_CONNECTED == (int)atomic_read(&ssv_vif->drv_conn_state)) {
+        SSV_LOG_DBG("%s, dut was connected\n", __FUNCTION__);
+        return -EALREADY;
+    }
     
+    if ((int)SSV_DRV_STATUS_DISCONNECTING == (int)atomic_read(&ssv_vif->drv_conn_state)) {
+        SSV_LOG_DBG("%s, dut is disconnecting\n", __FUNCTION__);
+        return -EALREADY;
+    }
+   
+    atomic_set(&ssv_vif->drv_conn_state, (int)SSV_DRV_STATUS_CONNECTING);
+
     ssv_vif->need_port_control = ssv_port_control(sme->crypto.cipher_group);
     SSV_LOG_DBG("need port control=%d\r\n",ssv_vif->need_port_control);
 #if defined(CONFIG_WPA_SUPPLICANT_CTL)
@@ -667,39 +683,6 @@ RETRY_CONNECT:
     } 
 #endif /*CONFIG_SSV_CHANNEL_FOLLOW */
 
-
-    sc->sta_reconnect_info.auth_type = sme->auth_type;
-   
-    if(ssv_cfg.sta_max_reconnect_times)
-    {
-         //Retry_Connection doesn't support WPA3
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
-        if(sme->auth_type != NL80211_AUTHTYPE_SAE)
-#else
-        //3.4 NL80211_AUTHTYPE_SAE no define ,need define NL80211_AUTHTYPE_SAE = NL80211_AUTHTYPE_NETWORK_EAP + 1
-        if(sme->auth_type != (NL80211_AUTHTYPE_NETWORK_EAP + 1))
-#endif
-        {
-            down(&sc->reconnect_sem);
-
-            /*If connection failed, retry again */
-            if(sc->sta_reconnect_info.connect_retry)
-            {
-                if (sme->crypto.n_ciphers_pairwise &&
-                ((sme->crypto.ciphers_pairwise[0] == WLAN_CIPHER_SUITE_WEP40) ||
-                (sme->crypto.ciphers_pairwise[0] == WLAN_CIPHER_SUITE_WEP104)))
-                {
-                    if(sme->auth_type == NL80211_AUTHTYPE_OPEN_SYSTEM)
-                        sme->auth_type = NL80211_AUTHTYPE_SHARED_KEY;
-                    else if(sme->auth_type == NL80211_AUTHTYPE_SHARED_KEY)
-                        sme->auth_type = NL80211_AUTHTYPE_OPEN_SYSTEM;
-                }
-                SSV_LOG_DBG("goto Retry\n");
-                goto RETRY_CONNECT;
-            }
-        }
-    }
-
     SSV_LOG_DBG("connect end %d\n", error);
     return error;
 }
@@ -715,6 +698,15 @@ static int ssv_cfg80211_disconnect(struct wiphy *wiphy, struct net_device *dev,
     struct ssv_vif *ssv_vif = netdev_priv(dev);
 
     SSV_LOG_DBG("[%s] reason_code %d\n", __FUNCTION__, reason_code);
+    
+    if ((int)SSV_DRV_STATUS_CONNECTING == (int)atomic_read(&ssv_vif->drv_conn_state)) {
+        SSV_LOG_DBG("%s, dut is connecting\n", __FUNCTION__);
+        return -EALREADY;
+    }
+    
+    if ((int)SSV_DRV_STATUS_CONNECTED == (int)atomic_read(&ssv_vif->drv_conn_state))
+        atomic_set(&ssv_vif->drv_conn_state, (int)SSV_DRV_STATUS_DISCONNECTING);
+    
     return(ssv_send_sm_disconnect_req(sc, ssv_vif, reason_code));
 }
 /**
@@ -890,6 +882,9 @@ static int ssv_cfg80211_del_station(struct wiphy *wiphy, struct net_device *dev,
             //Reset station last sequence
             for(j = 0; j < TID_MAX ; j++){
                 cur->rx_last_seqcntl[j] = 0xFFFF;
+            }
+            for(j = 0; j < TID_NOQOS_KEY_IDX_MAX ; j++){
+                cur->rx_last_seqcntl_noqos[j] = 0xFFFF;
             }
             error = ssv_send_me_sta_del(sc, cur->sta_idx, false);
             if ((error != 0) && (error != -EPIPE))
@@ -1988,6 +1983,33 @@ static struct ssv_sta *ssv_retrieve_sta(struct ssv_softc *sc,
     return NULL;
 }
 
+static void ssv_stop_send_data(struct ssv_softc *sc, struct ssv_vif *ssv_vif,  u8 *addr, struct ssv_sta *ssv_sta)
+{
+    if (is_broadcast_ether_addr(addr))
+    {
+        struct ssv_sta *cur, *tmp; 
+        list_for_each_entry_safe(cur, tmp, &ssv_vif->ap.sta_list, list) {
+            ssv_drv_hci_tx_pause_by_sta(sc->hci_priv, sc->hci_ops, cur->sta_idx);
+            ssv_drv_hci_tx_inactive_by_sta(sc->hci_priv, sc->hci_ops, cur->sta_idx);
+        }
+        
+    }
+    else
+    {
+        if(ssv_sta)
+        {
+            //WIFISW-3319
+            ssv_drv_hci_tx_pause_by_sta(sc->hci_priv, sc->hci_ops, ssv_sta->sta_idx);
+            ssv_drv_hci_tx_inactive_by_sta(sc->hci_priv, sc->hci_ops, ssv_sta->sta_idx);
+            /* Return the found STA */
+        }
+    }
+
+    //if wait for cfm timeout occur, try to icrease the delay time
+    msleep(200);
+
+}
+
 /**
  * @mgmt_tx: Transmit a management frame.
  */
@@ -2125,7 +2147,7 @@ static int ssv_cfg80211_mgmt_tx(struct wiphy *wiphy, struct net_device *dev,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
                                                            NL80211_CHAN_NO_HT,
 #endif
-                                                           30, &cookie);
+                                                           300, &cookie);
 
                     if (error)
                     {
@@ -2143,6 +2165,17 @@ static int ssv_cfg80211_mgmt_tx(struct wiphy *wiphy, struct net_device *dev,
                 ssv_params.offchan = true;
             }
         }
+        /***
+         * WIFISW-3319
+         * kill hostapd: wpa_supplicant will send the brocast deauth packet,
+         * station disconnected when receives the deauth packet.
+         * The data packets of softap will retry the maximum times,
+         * so that the kernel driver wait for cfm timeout.
+         * To avoid the situation, we stop the data queue before deauth packet.
+        */
+        if(ap && ieee80211_is_deauth(mgmt->frame_control))
+            ssv_stop_send_data(sc, ssv_vif, mgmt->da, ssv_sta);
+
 
         /* Push the management frame on the TX path */
         error = ssv_start_mgmt_xmit(ssv_vif, ssv_sta, &ssv_params, ssv_params.offchan, cookie);

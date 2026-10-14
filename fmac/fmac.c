@@ -37,6 +37,8 @@
 #include <linux/if_arp.h>
 #include <linux/icmp.h>
 
+#include "ssvdevice/rftool/ssv_efuse.h"
+
 /*******************************************************************************
  *         Local Structures
  ******************************************************************************/
@@ -442,6 +444,7 @@ enum data_frame_types ssv_get_data_frame_type(struct sk_buff *skb)
                         struct dhcp_data *dhcp;
                         u8 *opt;
                         u8 msgtype = 0;
+						u8 dhcp_op_len;
                         udphdr = (struct udphdr *)(skb->data + sizeof(struct ethhdr) + sizeof(struct iphdr));
                                             
     		            if(udphdr->dest == htons(67) || udphdr->source == htons(67)) 
@@ -449,20 +452,40 @@ enum data_frame_types ssv_get_data_frame_type(struct sk_buff *skb)
                             dhcp = (struct dhcp_data *)(skb->data + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr));
                             opt = (u8 *)(dhcp + 1);
                             opt += 4; //RFC1048 magic cookie?
-                            *opt++ = 53;
-                            *opt++ = 1;
-                            msgtype = *opt;
-                            if(msgtype == DHCPDISCOVER){
-                               type = SSV_DHCP_DISCOVER; 
-                            }else if(msgtype == DHCPOFFER){
-                                type = SSV_DHCP_OFFER;
-                            }else if(msgtype == DHCPREQUEST){
-                                type = SSV_DHCP_REQUEST;
-                            }else if(msgtype == DHCPACK){
-                                type = SSV_DHCP_ACK;
-                            }else{
-                                break;
-                            }                                                
+                            while(*opt != 255)
+                            {
+                                 
+                                if( *opt == 53)
+                                {
+                                    opt += 2;//len
+                                    msgtype = *opt;
+                                    if(msgtype == DHCPDISCOVER){
+                                        type = SSV_DHCP_DISCOVER; 
+                                    }else if(msgtype == DHCPOFFER){
+                                        type = SSV_DHCP_OFFER;
+                                    }else if(msgtype == DHCPREQUEST){
+                                        type = SSV_DHCP_REQUEST;
+                                    }else if(msgtype == DHCPACK){
+                                        type = SSV_DHCP_ACK;
+                                    }
+                                    break;
+                                }
+                                else
+                                {
+                                    opt++;//len
+                                    dhcp_op_len =  *opt;
+                                    opt += dhcp_op_len;
+                                    opt++;
+                                }
+
+                                if( (dhcp_op_len==0) ||
+                                    ((u8 *)opt - (u8 *)udphdr) >= ntohs(udphdr->len))
+                                {
+                                    SSV_LOG_DBG("DHCP Package error\n");
+                                    break;
+                                }
+
+                            }//end while                                                
                         }
                         break;
                     }
@@ -549,9 +572,19 @@ static void ssv_set_vers(struct ssv_softc *sc)
 
 static void ssv_overwrite_modparams(struct ssv_softc *sc)
 {
+    const char *chip_id  = efuse_get_chip_id();
     sc->mod_params->use_2040 = ssv_cfg.use_2040; 
     sc->mod_params->tx_lft = ssv_cfg.ampdu_tx_lft;
     sc->mod_params->he_on = ssv_cfg.he_on;
+
+    if(!strcmp(chip_id,"SV6115C")){ 
+        sc->mod_params->use_2040 = 0;
+        sc->mod_params->he_on = 0 ;
+    }else{
+        sc->mod_params->use_2040 = ssv_cfg.use_2040; 
+        sc->mod_params->he_on = ssv_cfg.he_on;
+    }
+
 }
 
 extern struct cfg80211_ops ssv_cfg80211_ops;
@@ -568,6 +601,7 @@ int ssv6xxx_fmac_init(void **plat_sc, struct ssv6xxx_hci_ops *hci_ops, void *hci
     int i = 0,j = 0;
 #endif
     int ret;
+    u8 ext_maddr[6];
 
     /* create a new wiphy for use with cfg80211 */
     wiphy = wiphy_new(&ssv_cfg80211_ops, sizeof(struct ssv_softc));
@@ -618,6 +652,9 @@ int ssv6xxx_fmac_init(void **plat_sc, struct ssv6xxx_hci_ops *hci_ops, void *hci
         for(j = 0; j < TID_MAX ; j++){
             sc->sta_table[i].rx_last_seqcntl[j] = 0xFFFF;
         }
+        for(j = 0; j < TID_NOQOS_KEY_IDX_MAX ; j++){
+            sc->sta_table[i].rx_last_seqcntl_noqos[j] = 0xFFFF;
+        }
     }
 
     if ((ret = ssv_ipc_init(sc)))
@@ -629,7 +666,6 @@ int ssv6xxx_fmac_init(void **plat_sc, struct ssv6xxx_hci_ops *hci_ops, void *hci
 
     mutex_init(&sc->cmd_lock);
     mutex_init(&sc->cb_lock);
-    sema_init( &sc->reconnect_sem, 0);
 
     sc->cmd_sent = false;
     INIT_LIST_HEAD(&sc->reset_cmd.list);
@@ -724,14 +760,24 @@ int ssv6xxx_fmac_init(void **plat_sc, struct ssv6xxx_hci_ops *hci_ops, void *hci
     ssv_send_filter_duplicate_rx(sc, ssv_cfg.filter_duplicate_rx);
     //ssv_send_wmm_follow_vo(sc, ssv_cfg.wmm_follow_vo);
     ssv_send_ipc_tx_use_one_hwq(sc, ssv_cfg.ipc_tx_use_one_hwq);
-    ssv_send_macaddr(sc, (u8 *)&sc->maddr[0][0], (u8 *)&sc->maddr[1][0]);
-    ssv_send_set_policy_tbl(sc, ssv_cfg.set_rts_method);
+
+	//Extend Mac Address
+	memcpy(ext_maddr, (u8 *)&sc->maddr[0][0], 6);
+    ext_maddr[5] ^= 0x1;
+    ssv_send_macaddr(sc, (u8 *)&sc->maddr[0][0], (u8 *)&ext_maddr[0]);
+	
+	ssv_send_set_policy_tbl(sc, ssv_cfg.set_rts_method);
     ssv_send_txq_credit_boundary(sc);
     ssv_send_mac_addr_rule_setting(sc, ssv_cfg.mac_low_mask,ssv_cfg.mac_high_mask);
     ssv_send_ipc_trigger_setting(sc, ssv_cfg.ipc_tx_trigger_en, ssv_cfg.ipc_tx_wait_num, ssv_cfg.ipc_tx_wait_timeout);
+    ssv_send_data_rate_update_freq(sc, ssv_cfg.data_rate_update_freq);
+    ssv_send_force_txrate_sgi_off_req(sc, ssv_cfg.txrate_force_sgi_off);
 #ifdef CONFIG_MIFI_LOWPOWER
     ssv_send_priv_msg_mifi_setting(sc, ssv_cfg.mifi_feature,  ssv_cfg.mifi_no_traffic_duration);
 #endif
+    ssv_send_extend_connect_timeout_setting(sc, ssv_cfg.auth_timeout, ssv_cfg.asso_timeout);
+    ssv_send_sta_detect_bcn_timeout_setting(sc, ssv_cfg.sta_detect_bcn_timeout);
+    ssv_send_conn_specific_ap(sc, ssv_cfg.specific_ap);
     sc->recovery_flag = false;
     return 0;
 

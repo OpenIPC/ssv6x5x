@@ -118,7 +118,7 @@ int ssv_custom_modify_macaddr(struct ssv_hw *sh)
 
     memcpy((void *)&sh->maddr[1][0], (void *)&sh->maddr[0][0], ETH_ALEN);
     /* notice: the second mac address rule must be following the fw*/
-    sh->maddr[1][5] ^= 0x1;
+    sh->maddr[1][0] ^= 0x2;
     
     SSV_LOG_DBG("mac address %pM/%pM\n",&sh->maddr[0][0], &sh->maddr[1][0]);    
     

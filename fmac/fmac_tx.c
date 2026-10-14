@@ -559,7 +559,7 @@ static netdev_tx_t _ssv_start_xmit(struct sk_buff *skb, struct net_device *dev)
     u8 tid;
 	struct sk_buff  *copy_skb = NULL;
 	enum data_frame_types data_type = SSV_DATA_UNKNOW;
-    #ifdef SSV_PERFORMANCE_WATCH
+#ifdef SSV_PERFORMANCE_WATCH
     struct ssv6xxx_hci_ctrl *hci_ctrl = (struct ssv6xxx_hci_ctrl *)sc->hci_priv;
     unsigned long tx_now_time = jiffies;
     static unsigned long tx_prev_runtime = 0;
@@ -735,6 +735,12 @@ static netdev_tx_t _ssv_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
     desc->host.packet_len = frame_len;
 
+    desc->host.sw_ack = 0;
+    if(data_type == SSV_EAPOL)
+    {
+         desc->host.sw_ack |= (1<<8);//for lowest rate
+         desc->host.tid = 0xff;
+    }
 #if 0 //Debug
     SSV_LOG_DBG("[%s][%d]\n", __FUNCTION__, __LINE__);
     _ssv_hex_dump(skb->data, skb->len);

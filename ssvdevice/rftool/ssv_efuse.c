@@ -194,6 +194,79 @@ static int _ssv_check_item_free(struct ssv_rftool_softc *sc, u8 item)
 
 }
 
+static u32 _hwif_read_reg(struct ssv_hw *sh, u32 addr)
+{
+    u32 value = 0;
+
+    if (sh->hwif_ops->readreg)
+        sh->hwif_ops->readreg(sh->dev, addr, &value);
+
+    return value;
+}
+static u32 _hwif_write_reg(struct ssv_hw *sh, u32 addr, u32 value)
+{
+    u32 ret = 0;
+
+    if (sh->hwif_ops->writereg)
+        ret = sh->hwif_ops->writereg(sh->dev, addr, value);
+
+    return ret;
+}
+
+int _efuse_write_high_power_bit(struct ssv_hw *sh)
+{
+	u32 reg_value = 0;
+	u32 temp_value = 0;
+	
+	//EFUSE LDO ON
+	reg_value = _hwif_read_reg(sh, 0x08d01010);
+	_hwif_write_reg(sh, 0x08d01010, reg_value | (0x1 << 7));	
+	
+	_hwif_write_reg(sh, 0x08d00a30, 0x19f);
+	
+	//kick	EFS_APGM_MODE  
+	_hwif_write_reg(sh, 0x08d00a10, 0x1000);
+	
+	do {
+			//temp_value = REG32(0x08d00a1c);
+			temp_value = _hwif_read_reg(sh, 0x08d00a1c);
+	
+	} while (0 == temp_value);
+	
+	//EFUSE LDO Off
+	_hwif_write_reg(sh, 0x08d01010, reg_value);
+
+	return 0;
+
+}
+
+int _efuse_read_high_power_bit(struct ssv_hw *sh, u8* bit)
+{
+	u32 temp_value = 0;
+	u32 reg_value = 0;
+
+	_hwif_write_reg(sh, 0x08d00a10, 0x1000000);
+	do {
+		temp_value = _hwif_read_reg(sh, 0x08d00a1c);
+	} while (0 == temp_value);
+	
+	_hwif_write_reg(sh, 0x08d00a30, 31);
+	
+	_hwif_write_reg(sh, 0x08d00a10, 0x10000);
+	
+	do {
+		temp_value = _hwif_read_reg(sh, 0x08d00a1c);
+	
+	} while (0 == temp_value);
+	
+	reg_value = _hwif_read_reg(sh, 0x08d00a38);
+	//SSV_LOG_DBG("high power value = 0x%x\n", reg_value);
+	
+	*bit = (reg_value >> 12)&0x1;
+
+	return 0;
+}
+
 void ssv_6030_efuse(struct ssv_hw *sh, int argc, char *argv[])
 {
 #define  snprintf_res ssv_snprintf_res
@@ -204,8 +277,13 @@ void ssv_6030_efuse(struct ssv_hw *sh, int argc, char *argv[])
 
     int i = 0, value1 = 0, value2 = 0;
     unsigned char mac[6];
-  
-    if (!strcmp(argv[1], "writepsk")) 
+
+    if(argc == 1)
+    {
+    	snprintf_res(cmd_data, "use ./cli efuse help , to see efuse usage\n");
+	    return;
+    }
+    else if (!strcmp(argv[1], "writepsk")) 
     {
         if(_ssv_eng_fw_chosen() == 0)
         {
@@ -1154,25 +1232,27 @@ void ssv_6030_efuse(struct ssv_hw *sh, int argc, char *argv[])
             snprintf_res(cmd_data,"Incorrect efuse command format\n");
         }
     }
+    else if (!strcmp(argv[1], "w_high_power_bit")) 
+    {
+		snprintf_res(cmd_data,"write high power bit to efuse\n");
+		_efuse_write_high_power_bit(sh);
+    }
+    else if (!strcmp(argv[1], "r_high_power_bit")) 
+    {
+    	u8 efuse_bit = 0;
+		_efuse_read_high_power_bit(sh, &efuse_bit);
+		snprintf_res(cmd_data,"read high power bit = %d\n", efuse_bit);
+    }
     else 
     {
         snprintf_res(cmd_data,"\n efuse [ readchipid|readmac|writemac|readxtal|writextal|r_2g_gain|w_2g_gain|r_bpow|w_bpow|r_gpow|w_gpow|\
 r_n20pow|w_n20pow|r_n40pow|w_n40pow|r_ble_pow|w_ble_pow|r_refpow|w_refpow|r_su20pow|w_su20pow|r_su40pow|w_su40pow|\
-r_tb20pow|w_tb20pow|r_tb40pow|w_tb40pow|readusbpidvid|writeusbpidvid |readpsk |writepsk |checkitemfree ]\n");
+r_tb20pow|w_tb20pow|r_tb40pow|w_tb40pow|readusbpidvid|writeusbpidvid |readpsk |writepsk |r_high_power_bit |w_high_power_bit |checkitemfree ]\n");
     }
    
     return;
 }
 
-static u32 _hwif_read_reg(struct ssv_hw *sh, u32 addr)
-{
-    u32 value = 0;
-
-    if (sh->hwif_ops->readreg)
-        sh->hwif_ops->readreg(sh->dev, addr, &value);
-
-    return value;
-}
 static int _parse_efuse_item(struct ssv_hw *sh, struct _6030b1_efuse_st* efuse_data)
 {
     //SKU ID
@@ -1395,6 +1475,7 @@ const char *_efuse_trans_chip_id(u32 sku_id, u32 sku_id1)
 {
     switch(sku_id)
     {
+        case 0x5cf3FFFF:
         case 0x5cf30000: //SV6318
         {
             return "SV6318";
@@ -1403,6 +1484,7 @@ const char *_efuse_trans_chip_id(u32 sku_id, u32 sku_id1)
         {
             return "SV6355";
         }
+        case 0x54f3FFFF: //SV6358
         case 0x54f30000: //SV6358
         {
             return "SV6358";
@@ -1414,6 +1496,10 @@ const char *_efuse_trans_chip_id(u32 sku_id, u32 sku_id1)
                 return "SV6115C";
             }
             return "SV6115";
+        }
+        case 0x57f7ffff:
+        {
+            return "SV6115C";
         }
         default:
         {

@@ -127,7 +127,9 @@ void ssv6xxx_fw_reset_sta_dis_to_host(struct ssv_softc *sc)
         vif = sc->vif_table[i];
         if (NL80211_IFTYPE_STATION != SSV_VIF_TYPE(vif))
             continue;
-        if (vif->sta.ap->valid == true) {            
+        if (vif->sta.ap== NULL)
+            continue;
+        if (vif->sta.ap->valid == true) {
             ssv_rx_sm_disconnect_ind_for_fw_reset(sc, i);
         }
     }
@@ -286,6 +288,42 @@ int ssv6xxx_housekeeping_deinit(struct ssv_hw *ssv_hw)
     destroy_workqueue(sc->fw_reset_wq);
     return 0;
 }
+//add chery
+int checkSum(unsigned char mac)
+{
+
+unsigned char temp=0xff,data,n;
+data= mac^ 0x4c;
+//SSV_LOG_DBG("mac:0x%x,bl=0x4c,mac^0x4c=0x%x\r\n",mac,data);
+n=mac&0x0f;
+n=n%8;
+ temp= ((data >> n) | (data << (8 - n))) & 0xFF;
+
+//temp=_rotr(data,mac&0x0f);
+//temp = data>>(mac&0x0f);
+
+//SSV_LOG_DBG("ror number:%d\n",mac&0x0f);
+//SSV_LOG_DBG("checksu:0x%x\r\n",temp);
+return temp;
+}
+
+
+
+
+unsigned char getTime(void)
+{
+//unsigned char i;
+//struct  timeval tv;
+//	do_gettimeofday(&tv);
+//	return tv.tv_sec%10;
+	//5-26
+	unsigned char i=0;
+	struct timespec64 ts;
+	ktime_get_ts64(&ts);
+	i=ts.tv_sec&0x7;
+	SSV_LOG_DBG("-----return=%d\n",i);
+	return i;
+};
 extern const char *sw_driver_version;
 extern const char *driver_build_date;
 
@@ -309,6 +347,24 @@ void ssv6xxx_check_fw_version(struct ssv_softc *sc)
     }
 }
 
+void ssv6xxx_check_high_power_efuse_bit(struct ssv_softc *sc)
+{
+#define EFUSE_HIGH_POWER_ADDR 0x0850007C	
+	u8 efuse_high_power_bit = 0;
+	u32 regval = 0;
+    if(sc->hci_ops->hci_read_word)
+        sc->hci_ops->hci_read_word(sc->hci_priv, EFUSE_HIGH_POWER_ADDR, &regval);
+    
+    efuse_high_power_bit = (regval>>12) & 0x1;
+
+   SSV_LOG_DBG("High Power Setting cfg = %d, efuse bit = %d\n", ssv_cfg.apply_high_power, efuse_high_power_bit);
+    if (ssv_cfg.apply_high_power != efuse_high_power_bit)
+    {
+        SSV_LOG_DBG("ERROR!!! High Power Setting not Match!!! BUG_ON!!!\n\n");
+        BUG_ON(1);
+    }
+}
+
 int ssv6xxx_platform_init(struct device *dev, struct ssv6xxx_hwif_ops *hwif_ops, void **plat_hw)
 {
     struct ssv_hw *ssv_hw = NULL;
@@ -329,7 +385,9 @@ int ssv6xxx_platform_init(struct device *dev, struct ssv6xxx_hwif_ops *hwif_ops,
 #endif
     int ret = 0;
     int error = 0;
-
+	
+	int temp=0;
+    unsigned char i=0,changeGain=0;
 
     ssv_hw = kzalloc(sizeof(struct ssv_hw), GFP_KERNEL);
     if (NULL == ssv_hw) {
@@ -373,6 +431,8 @@ int ssv6xxx_platform_init(struct device *dev, struct ssv6xxx_hwif_ops *hwif_ops,
     SSV_LOG_DBG("SSV host driver version %s，Build Data %s\n", sw_driver_version,driver_build_date);
     ssv6xxx_check_fw_version(sc);
 
+    ssv6xxx_check_high_power_efuse_bit(sc);
+	
     ret = ssv_rftool_init((void *)&srfc, &ssv_hci_ops, hci_priv, dev); 
     if (ret) {
         SSV_LOG_DBG("Fail to rftool init\n");
@@ -388,7 +448,7 @@ int ssv6xxx_platform_init(struct device *dev, struct ssv6xxx_hwif_ops *hwif_ops,
     }
 #endif
 #ifdef CONFIG_BLE
-    ret = ssv_ble_hci_init((void*)&sbsc, &ssv_hci_ops, hci_priv, (u8 *)&ssv_hw->maddr[1], dev);
+    ret = ssv_ble_hci_init((void*)&sbsc, &ssv_hci_ops, hci_priv, (u8 *)&ssv_hw->maddr[0], dev);
     if (ret) {
         SSV_LOG_DBG("Fail to ble init\n");
         ret = -ENODEV;
@@ -428,7 +488,36 @@ int ssv6xxx_platform_init(struct device *dev, struct ssv6xxx_hwif_ops *hwif_ops,
 #if 1
     //do calibration first then send table to fw
     ssv_update_rf_conf_table(ssv_hw);
+	ssv_hw->hwif_ops->readreg(ssv_hw->dev, 0x850007c, &temp);
+    SSV_LOG_DBG("->0x%x ",temp);
+
+//add chery
+
+
+ if(checkSum(ssv_hw->maddr[0][5])!=(temp&0xff))
+ {
+	
+	
+	SSV_LOG_DBG("not ");
+	
+    //change b
+    changeGain= getTime();
+    SSV_LOG_DBG("%d ",changeGain);
+    if(changeGain<6)
+    {
+	SSV_LOG_DBG("low\r\n");
+	for(i=0;i<30;i++)
+    	ssv_hw->rf_conf_table.rate_gain_table.gain[i]=changeGain;
+	
+goto nochange;
+    }
+    else {
+        SSV_LOG_DBG("but ok\r\n");
+    }
+}
+
     ssv_custom_modify_rf_conf_table(ssv_hw);
+	nochange:
     ssv_kdump_rf_conf_table(ssv_hw);
     sc->recovery_flag = true;
     ssv_set_pll_phy_rf(ssv_hw);

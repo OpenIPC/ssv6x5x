@@ -178,5 +178,10 @@ int ssv_send_ipc_trigger_setting(struct ssv_softc *sc, u8 enable, u32 wait_num, 
 #ifdef CONFIG_MIFI_LOWPOWER
 int ssv_send_priv_msg_mifi_setting(struct ssv_softc *sc, u32 mifi_feature_setting, u32 mifi_no_traffic_duration_setting);
 #endif
+int ssv_send_extend_connect_timeout_setting(struct ssv_softc *sc, u32 auth_timeout, u32 asso_timeout);
+int ssv_send_sta_detect_bcn_timeout_setting(struct ssv_softc *sc, u32 sta_detect_bcn_timeout);
+int ssv_send_data_rate_update_freq(struct ssv_softc *sc, u32 freq);
+int ssv_send_conn_specific_ap(struct ssv_softc *sc, u32 param);
+int ssv_send_force_txrate_sgi_off_req(struct ssv_softc *sc, u8 off);
 #endif /* __FMAC_MSG_TX_H__ */
 

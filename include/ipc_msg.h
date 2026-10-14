@@ -20,6 +20,7 @@
 #endif
 
 #define REG_FW_VERSION      0x08D00804
+#define SCAN_SWLIST_NAME_MAX_LENGTH  17
 
 /*******************************************************************************
  *         Enumerations
@@ -96,6 +97,13 @@ typedef enum en_ipc_priv_msg_type
     E_IPC_PRIV_MSG_TYPE_ADAPTIVE_OPS_SET,       ///35, adapt set parameter
     E_IPC_PRIV_MSG_TYPE_MAC_ADDR_RULE,            ///< 36, Set mac addr rule
     E_IPC_PRIV_MSG_TYPE_IPC_TRIGGER,            ///< 37, Set IPC Trigger
+    E_IPC_PRIV_MSG_TYPE_EXTEND_CONNECT_TIMEOUT,   ///< 38, Set connect timeout
+    E_IPC_PRIV_MSG_TYPE_STA_DETECT_BCN_TIMEOUT,   ///< 39, sta detect beacon timeout
+    E_IPC_PRIV_MSG_TYPE_SET_RATE_FREQ,      ///< 40. Set data rate frequency
+    E_IPC_PRIV_MSG_TYPE_UPDATE_RATE,        ///< 41, Data Rate update
+    E_IPC_PRIV_MSG_TYPE_SPECIFIC_AP,          ///< 42,Connect to ARUBA AP 
+    E_IPC_PRIV_MSG_TYPE_BLE_SCAN_IWLIST,          /// 43. ble scan white list
+    E_IPC_PRIV_MSG_TYPE_TXRATE_SGI_OFF_REQ,       /// 44. Force txrate SGI off  
     E_IPC_PRIV_MSG_TYPE_END = 0xFFFF,
 }EN_IPC_PRIV_MSG_TYPE;
 
@@ -336,7 +344,9 @@ struct ssv_rf_cali {
     u32 bus_clk:16;
     u32 thermal_low_thershold:16;
     u32 thermal_high_thershold:16;
-    u32 resv0;
+    u32 dsss_power:8;
+    u32 ofdm_power:8;
+    u32 resv0:16;
     struct st_rf_table rf_table;
 }SSV_PACKED_STRUCT_STRUCT;
 SSV_PACKED_STRUCT_END
@@ -395,6 +405,22 @@ typedef struct ST_IPC_SET_MIFI
     u32 no_traffic_duration;
 }SSV_PACKED_STRUCT_STRUCT ST_IPC_SET_MIFI;
 SSV_PACKED_STRUCT_END
+
+SSV_PACKED_STRUCT_BEGIN
+typedef struct st_extend_connect_timeout_param
+{
+    u16 auth_timeout;
+    u16 asso_timeout;
+}SSV_PACKED_STRUCT_STRUCT ST_EXTEND_CONNECT_TIMEOUT_PARAM;
+SSV_PACKED_STRUCT_END
+
+SSV_PACKED_STRUCT_BEGIN
+typedef struct st_sta_detect_bcn_timeout_param
+{
+    u32 timeout;
+}SSV_PACKED_STRUCT_STRUCT ST_STA_DETECT_BCN_TIMEOUT_PARAM;
+SSV_PACKED_STRUCT_END
+
 // hci bus defines
 #define SSV_BLE_HCI_OVER_UART 0
 #define SSV_BLE_HCI_OVER_HWIF 1 // USB or SDIO
@@ -411,6 +437,16 @@ struct ssv_ble_cfg {
 }SSV_PACKED_STRUCT_STRUCT;
 SSV_PACKED_STRUCT_END
 
+SSV_PACKED_STRUCT_BEGIN
+typedef struct st_ssv_set_scan_swlist
+{
+     unsigned int action; // 0: add, 1: del,  2: clear
+     unsigned int type;   // 0: name 1: mac
+     unsigned int index;  // 0 to (SCAN_SWLIST_MAX_NUM -1)
+     unsigned char target[1 + SCAN_SWLIST_NAME_MAX_LENGTH]; // len+name(17bytes), len+mac(6bytes)+mac_type(1byte)
+}SSV_PACKED_STRUCT_STRUCT ST_SSV_SET_SCAN_SWLIST;
+SSV_PACKED_STRUCT_END
+
 //ipc memory 使用的policy
 //驅動ipc msg tx rx 尚未ready前, 可以使用ipc memory和FW交換訊息
 //當ipc msg tx rx ready後, 建議使用ke msg和FW交換訊息
@@ -422,7 +458,9 @@ struct st_ipc_mem_layout {
     u32 pattern;
     u32 rf_cali_result[SSV_CALI_RESULT_SIZE];
     u32 rf_cali_mcs9_result[SSV_CALI_RESULT_SIZE];
-    u8  reserve[164];
+    u32 switch_uart_pin;
+    u32 apply_high_power;
+	u8  reserve[156];
 }SSV_PACKED_STRUCT_STRUCT;
 SSV_PACKED_STRUCT_END
 
@@ -433,6 +471,31 @@ struct st_ipc_adaptive_param {
     u32 total_count;
     u32 threshold;
 }SSV_PACKED_STRUCT_STRUCT;
+SSV_PACKED_STRUCT_END
+
+SSV_PACKED_STRUCT_BEGIN
+typedef struct st_data_rate
+{
+    /// Index of the station for which the RC statistics are provided
+    uint8_t sta_idx;
+    /// Flag indicating if the STA entry is valid or not
+    uint8_t valid;
+    /// Rate configuration of the sample
+    uint16_t rate_config;
+}SSV_PACKED_STRUCT_STRUCT ST_DATA_RATE;
+SSV_PACKED_STRUCT_END
+
+SSV_PACKED_STRUCT_BEGIN
+typedef struct st_all_data_rate
+{
+    ST_DATA_RATE sta_rate[13];  //STA_MAX
+}SSV_PACKED_STRUCT_STRUCT ST_ALL_DATA_RATE;
+SSV_PACKED_STRUCT_END
+
+typedef struct st_specific_ap_param
+{
+    u32 spefic_ap_connect;
+}SSV_PACKED_STRUCT_STRUCT ST_SPECIFIC_AP_PARAM;
 SSV_PACKED_STRUCT_END
 /*******************************************************************************
  *         Variables

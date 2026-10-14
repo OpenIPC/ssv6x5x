@@ -118,13 +118,6 @@ struct fw_reset_cmd {
 }__packed;
 
 
-struct ssv_sta_reconnect_info{
-    u32 auth_type;
-    bool connect_retry;
-    int retry_times;
-
-};
-
 /**
 * struct ssv_softc - hold the whole wifi driver data structure.
 *
@@ -145,8 +138,6 @@ struct ssv_softc {
     struct cfg80211_scan_request *scan_request;
     struct ssv_chanctx chanctx_table[NX_CHAN_CTXT_CNT];
     u8 cur_chanctx;
-    struct ssv_sta_reconnect_info sta_reconnect_info;
-    struct semaphore reconnect_sem;
 
     /* RoC Management */
     struct ssv_roc_elem *roc_elem;              /* Information provided by cfg80211 in its remain on channel request */

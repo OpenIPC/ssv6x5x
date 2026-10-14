@@ -24,6 +24,9 @@
 #include "hwif.h"
 #include "ipc_msg.h"
 #include "ssv_debug.h"
+#include "ssv_cfg.h"
+
+extern struct ssv6xxx_cfg ssv_cfg;
 
 static struct st_ipc_mem_layout ipc_mem_layout;
 int ssv_configure_ipc_mem(struct device *child, struct ssv6xxx_hwif_ops *hwif_ops)
@@ -38,6 +41,8 @@ int ssv_configure_ipc_mem(struct device *child, struct ssv6xxx_hwif_ops *hwif_op
         
         ipc_mem_layout.pattern = 0x565353;
         pvalue =(u32*)(&ipc_mem_layout);
+        ipc_mem_layout.switch_uart_pin = ssv_cfg.switch_uart_pin;
+        ipc_mem_layout.apply_high_power = ssv_cfg.apply_high_power;
 
         //assign to ipc memory
         for(i=0; i<sizeof(struct st_ipc_mem_layout); i+=4)

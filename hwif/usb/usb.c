@@ -60,6 +60,8 @@
         || (glue->dev_ready == false) \
     )
 
+#define USB_ACC_REG 0x08704198
+
 /* table of devices that work with this driver */
 static const struct usb_device_id ssv_usb_table[] = {
     { USB_DEVICE(USB_SSV_VENDOR_ID, USB_SSV_PRODUCT_ID) },
@@ -587,7 +589,7 @@ static int ssv6xxx_usb_force_load_fw_fromeheader(struct ssv6xxx_usb_glue *glue)
     ssv6xxx_usb_write_reg(glue->dev, 0x08c00004, 0x80000); //ROM code address 0x80000
     ssv6xxx_usb_write_reg(glue->dev, 0x08c00134, 0x200);
     ssv6xxx_usb_write_reg(glue->dev, 0x08c00014, 0xff000101);
-    msleep(500); //Delay to avoid ROM code is not ready.
+    msleep(50); //Delay to avoid ROM code is not ready.
 #endif
 
 
@@ -596,8 +598,6 @@ static int ssv6xxx_usb_force_load_fw_fromeheader(struct ssv6xxx_usb_glue *glue)
     if(ret)
         goto err;
 
-    ssv6xxx_usb_write_reg(glue->dev,0x08704198,0x01);
-    msleep(1);
 #ifndef HWIF_DIS_FW_DOWNLOAD
     ssv6xxx_usb_write_reg(glue->dev, 0x08c00004, 0x1000000);
     ssv6xxx_usb_write_reg(glue->dev, 0x08c00134, 0x200);
@@ -608,7 +608,7 @@ static int ssv6xxx_usb_force_load_fw_fromeheader(struct ssv6xxx_usb_glue *glue)
     ssv6xxx_usb_write_reg(glue->dev, 0x08c00860, 0x31);
     ssv6xxx_usb_write_reg(glue->dev, 0x80000, 0xd500d5);
 #endif
-    mdelay(500); //Wait 500ms for firmware ready.
+    mdelay(400); //Wait 400ms for firmware ready and rf calibration done
 #endif
 
 err:
@@ -625,7 +625,7 @@ static int ssv6xxx_usb_load_each_fw(struct ssv6xxx_usb_glue *glue)
     ssv6xxx_usb_write_reg(glue->dev, 0x08c00004, 0x80000); //ROM code address 0x80000
     ssv6xxx_usb_write_reg(glue->dev, 0x08c00134, 0x1200);
     ssv6xxx_usb_write_reg(glue->dev, 0x08c00014, 0xff000101);
-    msleep(500); //Delay to avoid ROM code is not ready.
+    msleep(50); //Delay to avoid ROM code is not ready.
 #endif
 
     if((NULL != cfgfirmwarepath) || (0x00 != ssv_cfg.firmware_path[0]))
@@ -641,8 +641,6 @@ static int ssv6xxx_usb_load_each_fw(struct ssv6xxx_usb_glue *glue)
         goto err;
 
     
-    ssv6xxx_usb_write_reg(glue->dev,0x08704198,0x01);
-    msleep(1);
 #ifndef HWIF_DIS_FW_DOWNLOAD
     ssv6xxx_usb_write_reg(glue->dev, 0x08c00004, 0x1000000);
     ssv6xxx_usb_write_reg(glue->dev, 0x08c00134, 0x1200);
@@ -653,7 +651,17 @@ static int ssv6xxx_usb_load_each_fw(struct ssv6xxx_usb_glue *glue)
     ssv6xxx_usb_write_reg(glue->dev, 0x08c00860, 0x31);
     ssv6xxx_usb_write_reg(glue->dev, 0x80000, 0xd500d5);
 #endif
-    mdelay(500); //Wait 500ms for firmware ready.
+   
+    //Please check the WIFISW-3412 to get the deatil information 
+    if((ssv_cfg.firmware_choice==2)||
+            (0==strcmp(ssv_cfg.firmware_name,"ssv6x5x-sw_2.bin"))){
+        mdelay(400); 
+    }else if((0==strcmp(ssv_cfg.firmware_name,"ssv6x5x-sw_ble.bin"))||
+                (0==strcmp(ssv_cfg.firmware_name,"ssv6x5x-sw_nimble.bin"))){
+        mdelay(170);
+    }else{
+        mdelay(50);
+    }
 #endif
 
 err:
@@ -823,8 +831,14 @@ static int __ssv6xxx_usb_cmd(struct ssv6xxx_usb_glue *glue, u8 cmd, void *data, 
     struct ssv6xxx_cmd_hdr *rsphdr;
     u16 sequence;
     u32 retry_times = 0;
-
+    u32 ingore_resp = 0;
+    
     mutex_lock(&glue->cmd_mutex);
+    if ((cmd == SSV6200_CMD_WRITE_REG) && (result != NULL))
+    {
+        ingore_resp = *((u32 *)result);
+    }
+    
     sequence = ssv6xxx_get_cmd_sequence(glue);
     do {
         retval = ssv6xxx_usb_send_cmd(glue, cmd, sequence, data, data_len);
@@ -833,6 +847,11 @@ static int __ssv6xxx_usb_cmd(struct ssv6xxx_usb_glue *glue, u8 cmd, void *data, 
     if (retval) {
         //SSV_LOG_DBG("%s: Fail to send cmd, sequence=%d, retval=%d\n", 
         //        __FUNCTION__, sequence, retval);
+        goto exit;
+    }
+    
+    if (ingore_resp)
+    {
         goto exit;
     }
 
@@ -1260,7 +1279,7 @@ static int __ssv6xxx_usb_write_reg(struct ssv6xxx_usb_glue *glue, u32 addr,
     int retval = (-1);
     struct ssv6xxx_write_reg *write_reg;
     u8 data[sizeof(struct ssv6xxx_write_reg)];
-    
+    u32 ingore_resp = 0;
     write_reg = (struct ssv6xxx_write_reg*)data;
 
     if (IS_GLUE_INVALID(glue))
@@ -1269,12 +1288,14 @@ static int __ssv6xxx_usb_write_reg(struct ssv6xxx_usb_glue *glue, u32 addr,
     memset(write_reg, 0, sizeof(struct ssv6xxx_write_reg));    
     write_reg->addr = cpu_to_le32(addr);
     write_reg->value = cpu_to_le32(buf);
-
-    retval = ssv6xxx_usb_cmd(glue, SSV6200_CMD_WRITE_REG, write_reg, sizeof(struct ssv6xxx_write_reg), NULL);
+    
+    if (write_reg->addr == USB_ACC_REG)
+    {
+        ingore_resp = 1;
+    }
+    retval = ssv6xxx_usb_cmd(glue, SSV6200_CMD_WRITE_REG, write_reg, sizeof(struct ssv6xxx_write_reg), (void *)&ingore_resp);
     if (retval) {
-        if(addr!=0x08704198){
-            SSV_LOG_DBG("%s: Fail to write register address %x, value %x\n", __FUNCTION__, addr, buf);
-        }
+        SSV_LOG_DBG("%s: Fail to write register address %x, value %x\n", __FUNCTION__, addr, buf);
     }
         
     return retval;
@@ -1321,9 +1342,12 @@ static void ssv6xxx_usb_rx_task(struct device *child,
     glue->rx_cb = rx_cb;
     glue->rx_cb_args = args;
     glue->is_rx_q_full = is_rx_q_full;
-    
-    for (i = 0 ; i < nr_recvbuff ; ++i) {
-        ssv6xxx_usb_recv_rx(glue, &(glue->ssv_rx_buf[i]));
+	
+    if (rx_cb != NULL)
+    {
+          for (i = 0 ; i < nr_recvbuff ; ++i) {
+              ssv6xxx_usb_recv_rx(glue, &(glue->ssv_rx_buf[i]));
+          }
     }
 }
 
@@ -1631,7 +1655,13 @@ begin_download_fw = 0;
         }
         ssv6xxx_usb_write_reg(glue->dev, 0x08C10008, tmp_regval);
     }
-
+    
+    // turn off sdio
+    ssv6xxx_usb_write_reg(glue->dev, 0x08d02070, 0x8);
+    ssv6xxx_usb_write_reg(glue->dev, 0x08d02074, 0x80008);
+    ssv6xxx_usb_write_reg(glue->dev, 0x08d02078, 0x0);
+    ssv6xxx_usb_write_reg(glue->dev, 0x08d02084, 0x8fc0);
+    
     /* INIT RX */
     ssv6xxx_init_queue(&glue->ssv_rx_queue);
     if (ssv_rx_use_wq) {
@@ -1732,6 +1762,41 @@ int ssv6xxx_usb_init(void)
     return usb_register(&ssv_usb_driver);
 }
 
+static int ssv_usb_do_device_exit(struct device *d, void *arg)
+{
+    struct usb_interface *intf = to_usb_interface(d);
+    struct ssv6xxx_usb_glue *glue = (struct ssv6xxx_usb_glue *)usb_get_intfdata(intf);
+    
+#ifndef HWIF_DIS_FW_DOWNLOAD
+        //Jump to ROM before load firmware.
+        ssv6xxx_usb_write_reg(glue->dev, 0x08c00004, 0x80000); //ROM code address 0x80000
+        ssv6xxx_usb_write_reg(glue->dev, 0x08c00134, 0x1200);
+        ssv6xxx_usb_write_reg(glue->dev, 0x08c00014, 0xff000101);
+        msleep(50); //Delay to avoid ROM code is not ready.
+#endif
+
+    // reset acc
+    ssv6xxx_usb_write_reg(glue->dev, USB_ACC_REG, 0x01);
+    msleep(1);
+    
+    // turn off sdio and wifi
+    ssv6xxx_usb_write_reg(glue->dev, 0x08d02070, 0xA);
+    ssv6xxx_usb_write_reg(glue->dev, 0x08d02074, 0xA000A);
+    ssv6xxx_usb_write_reg(glue->dev, 0x08d02078, 0x0);
+    ssv6xxx_usb_write_reg(glue->dev, 0x08d02084, 0x8fc0);
+    // turn off mac clock
+    ssv6xxx_usb_write_reg(glue->dev, 0x08c00000, 0x101);
+    // turn off ble clock
+    ssv6xxx_usb_write_reg(glue->dev, 0x08c0004c, 0x0);
+    // CPU/BUS clock
+    ssv6xxx_usb_write_reg(glue->dev, 0x08c00008, 0x303);
+    ssv6xxx_usb_write_reg(glue->dev, 0x08c00068, 0x7);
+    // turn off uart0
+    ssv6xxx_usb_write_reg(glue->dev, 0x08c00800, 0x0);
+    
+    return 0;
+}
+
 void ssv6xxx_usb_exit(void)
 {
     SSV_LOG_DBG("ssv6xxx_usb_exit\n");
@@ -1744,6 +1809,10 @@ void ssv6xxx_usb_exit(void)
         ssv6xxx_platform_deinit(_gp_plat_hw);
         _gp_plat_hw = NULL;
     }
+    
+    if (driver_for_each_device(&ssv_usb_driver.drvwrap.driver, NULL, NULL, ssv_usb_do_device_exit))
+        SSV_LOG_DBG("Cannot find SSV device\n");
+        
     usb_deregister(&ssv_usb_driver);
 }
 

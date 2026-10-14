@@ -83,9 +83,7 @@ static void _ssv_cmd_complete(struct ssv_cmd_mgr *cmd_mgr, struct ssv_cmd *cmd)
     cmd_mgr->queue_sz--;
 
     cmd->flags |= SSV_CMD_FLAG_DONE;
-    if (cmd->flags & SSV_CMD_FLAG_NONBLOCK) {
-        kfree(cmd);
-    } else {
+    if (!(cmd->flags & SSV_CMD_FLAG_NONBLOCK)) {
         if (SSV_CMD_WAIT_COMPLETE(cmd->flags)) {
             cmd->result = 0;
             complete(&cmd->complete);
@@ -419,6 +417,10 @@ static int _ssv_cmd_mgr_queue(struct ssv_cmd_mgr *cmd_mgr, struct ssv_cmd *cmd)
     cmd_mgr->queue_sz++;
     tout = msecs_to_jiffies(SSV_80211_CMD_TIMEOUT_MS * cmd_mgr->queue_sz);
 
+    //To wait for all packets flush, set SM_DISCONNECT_REQ response cfm timout to 30s
+    if(cmd->id == SM_DISCONNECT_REQ)
+        tout = msecs_to_jiffies(30000);
+
     if (!defer_push) {
 		ASSERT_ERR(!(sc->ipc_env->msga2e_hostid));
 		sc->ipc_env->msga2e_hostid = (void *)cmd;
@@ -580,7 +582,7 @@ void ssv_cmd_dump(const struct ssv_cmd *cmd)
 {
     SSV_LOG_DBG("cmd %p: tkn[%d]  flags:%04x  result:%3d  cmd:%4d-%-24s - reqcfm(%4d-%-s)\n",
            cmd, cmd->tkn, cmd->flags, cmd->result, cmd->id, SSV_ID2STR(cmd->id),
-           cmd->reqid, cmd->reqid != (lmac_msg_id_t)-1 ? SSV_ID2STR(cmd->reqid) : "none");
+           cmd->reqid, ((cmd->reqid != 0) && (cmd->reqid != (lmac_msg_id_t)-1)) ? SSV_ID2STR(cmd->reqid) : "none");
 }
 
 void ssv_cmd_mgr_init(struct ssv_cmd_mgr *cmd_mgr)
