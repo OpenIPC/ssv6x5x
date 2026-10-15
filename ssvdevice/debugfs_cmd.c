@@ -1208,6 +1208,15 @@ static int ssv_cmd_rfble(void *cmd_priv, int argc, char *argv[])
     return 0;
 }
 
+static int ssv_cmd_update_rf(void *cmd_priv, int argc, char *argv[])
+{
+    struct ssv_cmd_data *cmd_data = (struct ssv_cmd_data *)cmd_priv;
+    struct ssv_hw *ssv_hw = container_of(cmd_data, struct ssv_hw, cmd_data);
+
+    ssv_6030_update_rf(ssv_hw, argc, argv);
+    return 0;
+}
+
 static int ssv_cmd_efuse(void *cmd_priv, int argc, char *argv[])
 {
     struct ssv_cmd_data *cmd_data = (struct ssv_cmd_data *)cmd_priv;
@@ -1822,6 +1831,242 @@ static int ssv_ping_ipc_thread(void *data)
     return 0;
 }
 #endif
+#define CCK_LONG_PREAMBLE            0
+#define CCK_SHORT_PREAMBLE           1
+#define HT_LONG_GI                   0
+#define HT_SHORT_GI                  1
+#define HE_GI_TYPE_0_8               0
+#define HE_GI_TYPE_1_6               1
+#define HE_GI_TYPE_3_2               2
+#define FORMATMOD_NON_HT          0
+#define FORMATMOD_NON_HT_DUP_OFDM 1
+#define FORMATMOD_HT_MF           2
+#define FORMATMOD_HT_GF           3
+#define FORMATMOD_VHT             4
+#define FORMATMOD_HE_SU           5
+#define FORMATMOD_HE_MU           6
+#define FORMATMOD_HE_ER           7
+#define BW_20MHZ                  0 
+#define BW_40MHZ                  1
+
+struct ssv_phy_rate_info {
+    u16     rate_config;
+    u8      format;
+    u8      interval;
+    u8      bandwidth;
+    u16     rate;
+};
+
+static const char *const rc_mod2str[] = {
+    "FORMATMOD_NON_HT",
+    "FORMATMOD_NON_HT_DUP_OFDM",
+    "FORMATMOD_HT_MF",
+    "FORMATMOD_HT_GF",
+    "FORMATMOD_VHT",
+    "FORMATMOD_HE_SU",
+    "FORMATMOD_RESERVE",
+    "FORMATMOD_HE_EXT",
+};
+
+static const char *const rc_bw2str[] = {
+    "BW_20MHZ",
+    "BW_40MHZ",
+    "BW_80MHZ",
+    "BW_160MHZ",
+};
+
+
+const struct ssv_phy_rate_info ssv_phy_rate[] = {
+    {0x0000,    FORMATMOD_NON_HT   ,CCK_LONG_PREAMBLE,     BW_20MHZ,     10},  //B                                     
+    {0x0001,    FORMATMOD_NON_HT   ,CCK_SHORT_PREAMBLE,    BW_20MHZ,     20},                                        
+    {0x0002,    FORMATMOD_NON_HT   ,CCK_SHORT_PREAMBLE,    BW_20MHZ,     55},                                        
+    {0x0003,    FORMATMOD_NON_HT   ,CCK_SHORT_PREAMBLE,    BW_20MHZ,     110},                                       
+    {0x0401,    FORMATMOD_NON_HT   ,CCK_LONG_PREAMBLE,     BW_20MHZ,     20},                                        
+    {0x0402,    FORMATMOD_NON_HT   ,CCK_LONG_PREAMBLE,     BW_20MHZ,     55},                                        
+    {0x0403,    FORMATMOD_NON_HT   ,CCK_LONG_PREAMBLE,     BW_20MHZ,     110},                                       
+    {0x0004,    FORMATMOD_NON_HT   ,0                 ,    BW_20MHZ,      60}, //G                                   
+    {0x0005,    FORMATMOD_NON_HT   ,0                 ,    BW_20MHZ,      90},                                        
+    {0x0006,    FORMATMOD_NON_HT   ,0                 ,    BW_20MHZ,      120},                                       
+    {0x0007,    FORMATMOD_NON_HT   ,0                 ,    BW_20MHZ,      180},                                       
+    {0x0008,    FORMATMOD_NON_HT   ,0                 ,    BW_20MHZ,      240},                                       
+    {0x0009,    FORMATMOD_NON_HT   ,0                 ,    BW_20MHZ,      360},                                       
+    {0x000a,    FORMATMOD_NON_HT   ,0                 ,    BW_20MHZ,      480},                                       
+    {0x000b,    FORMATMOD_NON_HT   ,0                 ,    BW_20MHZ,      540},                                       
+    {0x1000,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_20MHZ,     65},//N BW20 LONG-GI                             
+    {0x1001,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_20MHZ,     130},                                       
+    {0x1002,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_20MHZ,     195},                                       
+    {0x1003,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_20MHZ,     260},                                       
+    {0x1004,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_20MHZ,     390},                                       
+    {0x1005,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_20MHZ,     520},                                       
+    {0x1006,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_20MHZ,     585},                                       
+    {0x1007,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_20MHZ,     650},                                       
+    {0x1200,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_20MHZ,      72},//N BW20 SHORT-GI                         
+    {0x1201,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_20MHZ,      144},                                       
+    {0x1202,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_20MHZ,      217},                                       
+    {0x1203,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_20MHZ,      289},                                       
+    {0x1204,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_20MHZ,      433},                                       
+    {0x1205,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_20MHZ,      578},                                       
+    {0x1206,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_20MHZ,      650},                                       
+    {0x1207,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_20MHZ,      722},                                       
+    {0x1080,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_40MHZ,     135},//N BW40 LONG-GI                           
+    {0x1081,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_40MHZ,     270},                                       
+    {0x1082,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_40MHZ,     405},                                       
+    {0x1083,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_40MHZ,     540},                                       
+    {0x1084,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_40MHZ,     810},                                       
+    {0x1085,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_40MHZ,     1080},                                       
+    {0x1086,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_40MHZ,     1215},                                       
+    {0x1087,    FORMATMOD_HT_MF   ,HT_LONG_GI,             BW_40MHZ,     1350},                                       
+    {0x1280,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_40MHZ,      150},//N BW40 SHORT-GI                            
+    {0x1281,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_40MHZ,      300},                                       
+    {0x1282,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_40MHZ,      450},                                       
+    {0x1283,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_40MHZ,      600},                                       
+    {0x1284,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_40MHZ,      900},                                       
+    {0x1285,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_40MHZ,      1200},                                       
+    {0x1286,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_40MHZ,      1350},                                       
+    {0x1287,    FORMATMOD_HT_MF   ,HT_SHORT_GI,            BW_40MHZ,      1500},                                       
+    {0x2800,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_20MHZ,      86},//AX SU BW20 0.8us GI                       
+    {0x2801,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_20MHZ,      172},                                       
+    {0x2802,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_20MHZ,      258},                                       
+    {0x2803,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_20MHZ,      344},                                       
+    {0x2804,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_20MHZ,      516},                                       
+    {0x2805,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_20MHZ,      688},                                       
+    {0x2806,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_20MHZ,      774},                                       
+    {0x2807,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_20MHZ,      860},                                       
+    {0x2808,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_20MHZ,      1032},                                       
+    {0x2809,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_20MHZ,      1147},                                       
+    {0x2A00,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_20MHZ,      81},//AX SU BW20 1.6us GI                         
+    {0x2A01,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_20MHZ,      163},                                       
+    {0x2A02,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_20MHZ,      244},                                       
+    {0x2A03,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_20MHZ,      325},                                       
+    {0x2A04,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_20MHZ,      488},                                       
+    {0x2A05,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_20MHZ,      650},                                       
+    {0x2A06,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_20MHZ,      731},                                       
+    {0x2A07,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_20MHZ,      813},                                       
+    {0x2A08,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_20MHZ,      975},                                       
+    {0x2A09,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_20MHZ,      1083},                                       
+    {0x2C00,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_20MHZ,      73},//AX SU BW20 3.2us GI                         
+    {0x2C01,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_20MHZ,      146},                                       
+    {0x2C02,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_20MHZ,      219},                                       
+    {0x2C03,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_20MHZ,      293},                                       
+    {0x2C04,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_20MHZ,      439},                                       
+    {0x2C05,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_20MHZ,      585},                                       
+    {0x2C06,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_20MHZ,      658},                                       
+    {0x2C07,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_20MHZ,      731},                                       
+    {0x2C08,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_20MHZ,      878},                                       
+    {0x2C09,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_20MHZ,      975},                                       
+    {0x2880,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_40MHZ,      172},//AX SU BW40 0.8us GI                        
+    {0x2881,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_40MHZ,      344},                                       
+    {0x2882,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_40MHZ,      516},                                       
+    {0x2883,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_40MHZ,      688},                                       
+    {0x2884,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_40MHZ,      1032},                                       
+    {0x2885,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_40MHZ,      1376},                                       
+    {0x2886,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_40MHZ,      1549},                                       
+    {0x2887,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_40MHZ,      1721},                                       
+    {0x2888,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_40MHZ,      2065},                                       
+    {0x2889,    FORMATMOD_HE_SU   ,HE_GI_TYPE_0_8,         BW_40MHZ,      2294},                                       
+    {0x2A80,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_40MHZ,      163},//AX SU BW40 1.6us GI                        
+    {0x2A81,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_40MHZ,      325},                                       
+    {0x2A82,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_40MHZ,      488},                                       
+    {0x2A83,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_40MHZ,      650},                                       
+    {0x2A84,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_40MHZ,      975},                                       
+    {0x2A85,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_40MHZ,      1300},                                       
+    {0x2A86,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_40MHZ,      1463},                                       
+    {0x2A87,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_40MHZ,      1625},                                       
+    {0x2A88,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_40MHZ,      1950},                                       
+    {0x2A89,    FORMATMOD_HE_SU   ,HE_GI_TYPE_1_6,         BW_40MHZ,      2167},                                       
+    {0x2C80,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_40MHZ,      146},//AX SU BW40 3.2us GI                        
+    {0x2C81,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_40MHZ,      293},                                       
+    {0x2C82,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_40MHZ,      439},                                       
+    {0x2C83,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_40MHZ,      585},                                       
+    {0x2C84,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_40MHZ,      878},                                       
+    {0x2C85,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_40MHZ,      1170},                                       
+    {0x2C86,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_40MHZ,      1316},                                       
+    {0x2C87,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_40MHZ,      1463},                                       
+    {0x2C88,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_40MHZ,      1755},                                       
+    {0x2C89,    FORMATMOD_HE_SU   ,HE_GI_TYPE_3_2,         BW_40MHZ,      1950},                                       
+    {0x3800,    FORMATMOD_HE_ER   ,HE_GI_TYPE_0_8,         BW_20MHZ,      86},//AX ER BW20 0.8us GI                         
+    {0x3801,    FORMATMOD_HE_ER   ,HE_GI_TYPE_0_8,         BW_20MHZ,      172},                                       
+    {0x3802,    FORMATMOD_HE_ER   ,HE_GI_TYPE_0_8,         BW_20MHZ,      258},                                       
+    {0x3A00,    FORMATMOD_HE_ER   ,HE_GI_TYPE_1_6,         BW_20MHZ,      81},//AX ER BW20 1.6us GI                         
+    {0x3A01,    FORMATMOD_HE_ER   ,HE_GI_TYPE_1_6,         BW_20MHZ,      163},                                       
+    {0x3A02,    FORMATMOD_HE_ER   ,HE_GI_TYPE_1_6,         BW_20MHZ,      244},                                       
+    {0x3C00,    FORMATMOD_HE_ER   ,HE_GI_TYPE_3_2,         BW_20MHZ,      73},//AX EU BW20 3.2us GI                         
+    {0x3C01,    FORMATMOD_HE_ER   ,HE_GI_TYPE_3_2,         BW_20MHZ,      146},                                       
+    {0x3C02,    FORMATMOD_HE_ER   ,HE_GI_TYPE_3_2,         BW_20MHZ,      219},                                       
+    {0x3880,    FORMATMOD_HE_ER   ,HE_GI_TYPE_0_8,         BW_40MHZ,      172},//AX ER BW40 0.8us GI                        
+    {0x3881,    FORMATMOD_HE_ER   ,HE_GI_TYPE_0_8,         BW_40MHZ,      344},                                       
+    {0x3882,    FORMATMOD_HE_ER   ,HE_GI_TYPE_0_8,         BW_40MHZ,      516},                                       
+    {0x3A80,    FORMATMOD_HE_ER   ,HE_GI_TYPE_1_6,         BW_40MHZ,      163},//AX ER BW40 1.6us GI                       
+    {0x3A81,    FORMATMOD_HE_ER   ,HE_GI_TYPE_1_6,         BW_40MHZ,      325},                                       
+    {0x3A82,    FORMATMOD_HE_ER   ,HE_GI_TYPE_1_6,         BW_40MHZ,      488},                                       
+    {0x3C80,    FORMATMOD_HE_ER   ,HE_GI_TYPE_3_2,         BW_40MHZ,      146},//AX EU BW40 3.2us GI                        
+    {0x3C81,    FORMATMOD_HE_ER   ,HE_GI_TYPE_3_2,         BW_40MHZ,      293},                                       
+    {0x3C82,    FORMATMOD_HE_ER   ,HE_GI_TYPE_3_2,         BW_40MHZ,      439},                                       
+};
+
+void ssv_get_sta_data_rate(u16 rate_config, int *mode, int *bw, int *mcs, int *data_rate)
+{
+    int i = 0;
+    u16 rc = rate_config;
+    u8 format = 0;
+
+    rc = (rc & 0x3FFF);
+    format = ((rc & 0x3800) >> 11);
+
+    switch (format) {
+        case FORMATMOD_NON_HT:
+        case FORMATMOD_NON_HT_DUP_OFDM:
+            rc = ((rc & 0xC7FF) | (FORMATMOD_NON_HT << 11));
+            break;
+
+        case FORMATMOD_HT_MF:
+        case FORMATMOD_HT_GF:
+            rc = ((rc & 0xC7FF) | (FORMATMOD_HT_MF << 11));
+            break;
+
+        case FORMATMOD_HE_SU:
+        case FORMATMOD_HE_ER:
+            break;
+        default:
+            *data_rate = 0;
+            return;
+    }
+
+    *mode = 0;
+    *bw = 0;
+    *mcs = 0;
+    *data_rate = 0;
+    
+    for (i = 0; i < (sizeof(ssv_phy_rate)/sizeof(struct ssv_phy_rate_info)); i++) {
+        if (rc == ssv_phy_rate[i].rate_config) {
+            *mode = ssv_phy_rate[i].format; 
+            *bw = ssv_phy_rate[i].bandwidth;
+            *mcs = (ssv_phy_rate[i].rate_config & 0x7F);
+            *data_rate = ssv_phy_rate[i].rate;
+        }
+    }
+}
+
+static int ssv_cmd_rate(void *cmd_priv, int argc, char *argv[])
+{
+	struct ssv_cmd_data *cmd_data = (struct ssv_cmd_data *)cmd_priv;
+	struct ssv_hw *ssv_hw = container_of(cmd_data, struct ssv_hw, cmd_data);
+	struct ssv_softc *sc = ssv_hw->sc;
+	int mode = 0, bw = 0, mcs = 0, data_rate = 0;
+	struct ssv_vif *ssv_vif = NULL;
+
+	// Look for VIF entry check sta mode exist or not
+	list_for_each_entry(ssv_vif, &sc->vifs, list) {
+		if (ssv_vif->up) {
+			if ( (NL80211_IFTYPE_STATION == SSV_VIF_TYPE(ssv_vif)) && ((ssv_vif->sta.ap)) )
+            {
+				ssv_get_sta_data_rate(ssv_vif->sta.ap->rate_config.value, &mode, &bw, &mcs, &data_rate);  
+			    ssv_snprintf_res(cmd_data, "%s, %s, rate %d\n\n", rc_mod2str[mode], rc_bw2str[bw], data_rate);
+            }
+		}
+	}
+	return 0;
+}
 
 static int ssv_cmd_ping(void *cmd_priv, int argc, char *argv[])
 {
@@ -1967,6 +2212,269 @@ end:
     return 0;
 }
 
+#ifdef CONFIG_BLE
+extern void ssv_ble_hci_send_bleinit(struct ssv_ble_softc *sbsc, u8 reset_only);
+extern void ssv_ble_hci_send_packet(struct ssv_ble_softc *snc, char *buf, u16 buflen);
+static int ssv_cmd_ble(void *cmd_priv, int argc, char *argv[])
+{
+    struct ssv_cmd_data *cmd_data = (struct ssv_cmd_data *)cmd_priv;
+    struct ssv_hw *ssv_hw = container_of(cmd_data, struct ssv_hw, cmd_data);
+    struct ssv_ble_softc *sbsc = ssv_hw->sbsc;
+    u8 hcmd_buf[256] = {0};
+
+    if(argc==1)
+    {
+        ssv_snprintf_res(cmd_data, "usage:\n");
+        ssv_snprintf_res(cmd_data, "        cli ble init\n");
+        ssv_snprintf_res(cmd_data, "        cli ble reset\n");
+        ssv_snprintf_res(cmd_data, "        cli ble scan [on/off] [scan interval] [scan window]\n");
+        ssv_snprintf_res(cmd_data, "            on=1;off=0;\n");
+        ssv_snprintf_res(cmd_data, "            scan interval: (Hex)(us)\n");
+        ssv_snprintf_res(cmd_data, "            scan window  : (Hex)(us)\n");
+
+        return 0;
+    }
+    if (0==strcmp(argv[1], "init"))
+    {
+        SSV_LOG_INFO("ssv_cmd_ble init\n");
+        // ssv6xxx_ble_init(sc, SSV_BLE_HCI_OVER_SDIO);
+        ssv_ble_hci_send_bleinit(sbsc, 0);
+        ssv_snprintf_res(cmd_data, "ble: controller init\n");
+    }
+    else if (0==strcmp(argv[1], "reset"))
+    {
+        memset(hcmd_buf,0,sizeof(hcmd_buf));
+        hcmd_buf[0]=0x1;
+        //opcode: scan parameter
+        hcmd_buf[1]=0x03;
+        hcmd_buf[2]=0x0C;
+        //parameter total length
+        hcmd_buf[3]=0;
+        ssv_ble_hci_send_packet(sbsc, (char *)hcmd_buf, (u16)4);
+        // ssv6xxx_send_ble_packet(sc, (u8 *)hcmd_buf,(u32)4);
+        ssv_snprintf_res(cmd_data, "ble: HCI Reset\n");
+
+        memset(hcmd_buf,0,sizeof(hcmd_buf));
+        hcmd_buf[0]=0x1;
+        //opcode: scan parameter
+        hcmd_buf[1]=0x01;
+        hcmd_buf[2]=0x0C;
+        //parameter total length
+        hcmd_buf[3]=8;
+        //
+        hcmd_buf[4]=0xFF;
+        hcmd_buf[5]=0xFF;
+        hcmd_buf[6]=0xFF;
+        hcmd_buf[7]=0xFF;
+        hcmd_buf[8]=0xFF;
+        hcmd_buf[9]=0xFF;
+        hcmd_buf[10]=0xFF;
+        hcmd_buf[11]=0xFF;
+
+        ssv_ble_hci_send_packet(sbsc, (char *)hcmd_buf, (u16)12);
+        // ssv6xxx_send_ble_packet(sc, (u8 *)hcmd_buf,(u32)12);
+        ssv_snprintf_res(cmd_data, "ble: set event mask\n");
+
+        hcmd_buf[0]=0x1;
+        //opcode: scan parameter
+        hcmd_buf[1]=0x01;
+        hcmd_buf[2]=0x20;
+        //parameter total length
+        hcmd_buf[3]=8;
+        //
+        hcmd_buf[4]=0xFF;
+        hcmd_buf[5]=0xFF;
+        hcmd_buf[6]=0xFF;
+        hcmd_buf[7]=0xFF;
+        hcmd_buf[8]=0xFF;
+        hcmd_buf[9]=0xFF;
+        hcmd_buf[10]=0xFF;
+        hcmd_buf[11]=0xFF;
+
+        ssv_ble_hci_send_packet(sbsc, (char *)hcmd_buf, (u16)12);
+        // ssv6xxx_send_ble_packet(sc, (u8 *)hcmd_buf,(u32)12);
+        ssv_snprintf_res(cmd_data, "ble: set le event mask\n");
+
+    }
+    else if (0==strcmp(argv[1], "scan"))
+    {
+        if(0 == strcmp(argv[2], "1"))
+        {
+            u16 temp;
+            memset(hcmd_buf,0,sizeof(hcmd_buf));
+
+            hcmd_buf[0]=0x1;
+            //opcode: scan parameter
+            hcmd_buf[1]=0x0B;
+            hcmd_buf[2]=0x20;
+            //parameter total length
+            hcmd_buf[3]=7;
+            //scan type. Passive scan
+            hcmd_buf[4]=0x00;
+            //scan interval
+            if(argc==5)
+            {
+                temp=simple_strtol(argv[3],NULL,16);
+                SSV_LOG_INFO("scan interval %d(us)\n",temp*625);
+                hcmd_buf[5]=(temp&0xFF);
+                hcmd_buf[6]=((temp>>8)&0xFF);
+            }
+            else
+            {
+                hcmd_buf[5]=0x00;
+                hcmd_buf[6]=0x2;
+            }
+            //scan window
+            if(argc==5)
+            {
+                temp=simple_strtol(argv[4],NULL,16);
+                SSV_LOG_INFO("scan window %d(us)\n",temp*625);
+                hcmd_buf[7]=(temp&0xFF);
+                hcmd_buf[8]=((temp>>8)&0xFF);
+            }
+            else
+            {
+                hcmd_buf[7]=0x00;
+                hcmd_buf[8]=0x2;
+            }
+            //own address type
+            hcmd_buf[9]=0;
+            //scan filter policy
+            hcmd_buf[10]=0;
+            ssv_ble_hci_send_packet(sbsc, (char *)hcmd_buf, (u16)11);
+            // ssv6xxx_send_ble_packet(sc, (u8 *)hcmd_buf,(u32)11);
+            ssv_snprintf_res(cmd_data, "ble: set scan parameter\n");
+
+            SSV_LOG_INFO("scan:set enable\n");
+            memset(hcmd_buf,0,sizeof(hcmd_buf));
+
+            hcmd_buf[0]=0x1;
+            //opcode: scan enable
+            hcmd_buf[1]=0x0C;
+            hcmd_buf[2]=0x20;
+            //parameter total length
+            hcmd_buf[3]=2;
+            //scan enable
+            hcmd_buf[4]=0x1;
+            //duplicate filter enable
+            hcmd_buf[5]=0x1;
+
+            ssv_ble_hci_send_packet(sbsc, (char *)hcmd_buf, (u16)6);
+            // ssv6xxx_send_ble_packet(sc, (u8 *)hcmd_buf,(u32)6);
+            ssv_snprintf_res(cmd_data, "ble: scan enable\n");
+        }
+        else
+        {
+            memset(hcmd_buf,0,sizeof(hcmd_buf));
+
+            hcmd_buf[0]=0x1;
+            //opcode: scan enable
+            hcmd_buf[1]=0x0C;
+            hcmd_buf[2]=0x20;
+            //parameter total length
+            hcmd_buf[3]=2;
+            //scan disable
+            hcmd_buf[4]=0x0;
+            //duplicate filter disable
+            hcmd_buf[5]=0x0;
+
+            ssv_ble_hci_send_packet(sbsc, (char *)hcmd_buf, (u16)6);
+            // ssv6xxx_send_ble_packet(sc, (u8 *)hcmd_buf,(u32)6);
+            ssv_snprintf_res(cmd_data, "ble: scan disable\n");
+        }
+    }
+
+    return 0;
+}
+#endif //end of #ifdef CONFIG_BLE
+
+static int ssv_cmd_stamsg(void *cmd_priv, int argc, char *argv[])
+{
+    struct ssv_vif *vif = NULL;
+    int rssi = 0;
+    int channel = 0;
+    int ssid_len = 0;
+    int num = 0;
+    struct ssv_cmd_data *cmd_data = (struct ssv_cmd_data *)cmd_priv;
+    struct ssv_hw *ssv_hw = container_of(cmd_data, struct ssv_hw, cmd_data);
+    struct ssv_softc *ssv_sc = ssv_hw->sc;
+    list_for_each_entry(vif, &ssv_sc->vifs, list){
+        if(vif->up) {
+            if (NL80211_IFTYPE_STATION == SSV_VIF_TYPE(vif)) {
+               ssv_snprintf_res(cmd_data, "ifname = %s \n",  vif->wdev.netdev->name );
+               if (NULL != vif->sta.ap) {
+                    rssi = vif->sc->rssiaccu/32;
+                    ssid_len = vif->wdev.ssid_len;
+                    switch (vif->sta.ap->center_freq){
+                        case 2412:
+                            channel = 1;
+                            break;
+                        case 2417:
+                            channel = 2;
+                            break;
+                        case 2422:
+                            channel = 3;
+                            break;
+                        case 2427:
+                            channel = 4;
+                            break;
+                        case 2432:
+                            channel = 5;
+                            break;
+                        case 2437:
+                            channel = 6;
+                            break;
+                        case 2442:
+                            channel = 7;
+                            break;
+                        case 2447:
+                            channel = 8;
+                            break;
+                        case 2452:
+                            channel = 9;
+                            break;
+                        case 2457:
+                            channel = 10;
+                            break;
+                        case 2462:
+                            channel = 11;
+                            break;
+                        case 2467:
+                            channel = 12;
+                            break;
+                        case 2472:
+                            channel = 13;
+                            break;
+                        case 2484:
+                            channel = 14;
+                            break;
+                        default:
+                            channel = 0;
+                            break;
+                    }
+                    ssv_snprintf_res(cmd_data, "ssid = ");
+                    while(num < ssid_len){
+                        ssv_snprintf_res(cmd_data, "%c",(char)vif->wdev.ssid[num]);
+                        num++;
+                    }
+                    ssv_snprintf_res(cmd_data, "\n");
+                    ssv_snprintf_res(cmd_data, "ssid_len = %d \n",  ssid_len ); 
+                    ssv_snprintf_res(cmd_data, "channel = %d \n",  channel);
+                    ssv_snprintf_res(cmd_data, "mac = %02x:%02x:%02x:%02x:%02x:%02x  \n", vif->sta.ap->mac_addr[0],vif->sta.ap->mac_addr[1],vif->sta.ap->mac_addr[2],vif->sta.ap->mac_addr[3],vif->sta.ap->mac_addr[4],vif->sta.ap->mac_addr[5] ); 
+                    ssv_snprintf_res(cmd_data, "rssiaccu = %d \n",  rssi ); 
+                    ssv_snprintf_res(cmd_data, "connected\n");
+                }
+                else{
+                    ssv_snprintf_res(cmd_data, "not connected\n");
+                }
+                
+            } 
+        }
+    }
+    ssv_snprintf_res(cmd_data, "ap_info[OK]\n");
+    return 0;
+}
+
 struct ssv_cmd_table cmd_table[] = {
     { "help",       ssv_cmd_help,       "ssv6200 command usage."            , 2048},
     { "-h",         ssv_cmd_help,       "ssv6200 command usage."            , 2048},
@@ -1987,6 +2495,7 @@ struct ssv_cmd_table cmd_table[] = {
     { "flowctl",    ssv_cmd_flowctl,    "flow control"                      ,  512},
     { "rf",         ssv_cmd_rf,         "change parameters for rf tool"     ,  1024},
     { "rfble",         ssv_cmd_rfble,         "change parameters for rfble tool"     ,  1024},
+    { "updaterf",    ssv_cmd_update_rf, "rf table change update"            ,  1024},
     { "efuse",      ssv_cmd_efuse,      "efuse tool"                        ,  512},
 #ifdef SSV_MODULE_TEST
     { "modtest",    ssv_cmd_modtest,    "module test"                       ,  512},
@@ -2000,10 +2509,14 @@ struct ssv_cmd_table cmd_table[] = {
     { "regw",     ssv_cmd_regw,     "for wirte ble register"                        ,  512},
     { "version",  ssv_cmd_version,  "get version"                            ,  512},
     { "ping",     ssv_cmd_ping,     "ping tool for datapath"                 ,  128},
+    { "rate",     ssv_cmd_rate,     "get station data rate"                  ,  512},
 
     { "AT+ADAPT",       ssv_cmd_adapt,      "Enable/Disable adaptive"   , 512},
     { "AT+SET_ADAPT",   ssv_cmd_set_adapt,  "Set adaptive"              , 512},
-    
+    { "stamsg",     ssv_cmd_stamsg,     "get station message"           , 512},
+#ifdef CONFIG_BLE
+    { "ble",            ssv_cmd_ble,    "ble test"                          , 512},
+#endif
     { NULL, NULL, NULL, 0},
 };
 

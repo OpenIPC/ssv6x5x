@@ -244,11 +244,7 @@ static int ssv_send_msg(struct ssv_softc *sc, const void *msg_params,
         cmd->flags |= SSV_CMD_FLAG_REQ_CFM;
     // SSV_LOG_DBG("[%s][%d] cmd = %p\n", __FUNCTION__, __LINE__, cmd);
     ret = sc->cmd_mgr.queue(&sc->cmd_mgr, cmd);
-
-    if (!nonblock)
-        kfree(cmd);
-    else
-        ret = cmd->result;
+    kfree(cmd);
 
     return ret;
 }
@@ -723,11 +719,12 @@ __INLINE void _ssv_me_config_set_he_cap(struct ssv_softc *sc, struct me_config_r
     // HE_PHY_CAPA_BIT_SET(he_cap, DCM_MAX_NSS_RX);
     
         // HE_PHY_CAPA_BIT_SET(he_cap, SU_BEAMFORMER);
-    if (sc->mod_params->bfmee)
-    {
-        HE_PHY_CAPA_BIT_SET(he_cap, SU_BEAMFORMEE);
-        HE_PHY_CAPA_VAL_SET(he_cap, BFMEE_MAX_STS_UNDER_80MHZ, 4);
-    }
+    // by phy team request, mark the flag
+    //if (sc->mod_params->bfmee)
+    //{
+    //    HE_PHY_CAPA_BIT_SET(he_cap, SU_BEAMFORMEE);
+    //    HE_PHY_CAPA_VAL_SET(he_cap, BFMEE_MAX_STS_UNDER_80MHZ, 4);
+    //}
     HE_PHY_CAPA_BIT_SET(he_cap, NG16_SU_FEEDBACK);
     #if (NX_MDM_VER > 30)
     HE_PHY_CAPA_BIT_SET(he_cap, PARTIAL_BW_EXT_RANGE);
@@ -743,7 +740,8 @@ __INLINE void _ssv_me_config_set_he_cap(struct ssv_softc *sc, struct me_config_r
     #if (NX_MDM_VER > 30)
     HE_PHY_CAPA_BIT_SET(he_cap, HE_ER_SU_PPDU_4x_LTF_AND_08_US_GI);
     #endif
-    HE_PHY_CAPA_BIT_SET(he_cap, 20MHZ_IN_40MHZ_HE_PPDU_IN_2G);
+    // by phy team request, mark the flag
+    //HE_PHY_CAPA_BIT_SET(he_cap, 20MHZ_IN_40MHZ_HE_PPDU_IN_2G);
     #if (NX_MDM_VER > 30)
     HE_PHY_CAPA_BIT_SET(he_cap, HE_ER_SU_PPDU_4x_LTF_AND_08_US_GI);
     #endif
@@ -1046,6 +1044,12 @@ int ssv_send_me_sta_add(struct ssv_softc *sc, struct station_parameters *params,
 
     if (params->sta_flags_set & BIT(NL80211_STA_FLAG_MFP))
         req->flags |= STA_MFP_CAPA;
+
+    if (params->sta_flags_set & BIT(NL80211_STA_FLAG_SHORT_PREAMBLE))
+    {
+        req->flags |= STA_SHORT_PREAMBLE_CAPA;
+        SSV_LOG_DBG("add station support SHORT_PREAMBLE\n");
+    }       
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
     if (params->opmode_notif_used) {
@@ -1388,6 +1392,7 @@ int ssv_send_sm_external_auth_required_rsp(struct ssv_softc *sc,
     /* Set parameters for the SM_DISCONNECT_REQ message */
     req->status = status;
     req->vif_idx = ssv_vif->drv_vif_index;
+    req->pack_byte = 0;
 
     /* Send the SM_EXTERNAL_AUTH_REQUIRED_RSP message to LMAC FW */
     return ssv_send_msg(sc, req, 0, 0, NULL);
@@ -2133,3 +2138,147 @@ int ssv_send_ipc_trigger_setting(struct ssv_softc *sc, u8 enable, u32 wait_num, 
     return 0;
 }
 
+int ssv_send_extend_connect_timeout_setting(struct ssv_softc *sc, u32 auth_timeout, u32 asso_timeout)
+{
+    ST_IPC_PRIV_MSG *msg = NULL;
+    ST_EXTEND_CONNECT_TIMEOUT_PARAM *param = NULL;
+    u32 msg_total_len = 0;
+
+    msg_total_len = (u32)(sizeof(ST_IPC_PRIV_MSG)+sizeof(ST_EXTEND_CONNECT_TIMEOUT_PARAM));
+    msg = kzalloc(msg_total_len+1, GFP_KERNEL);
+
+    if (!msg) {
+        SSV_LOG_DBG("Fail to alloc extend connect timeout msg\n");
+        return 0; 
+    }
+    
+    // set msg id
+    msg->msgid = E_IPC_PRIV_MSG_TYPE_EXTEND_CONNECT_TIMEOUT;
+    msg->msglen = sizeof(ST_EXTEND_CONNECT_TIMEOUT_PARAM);
+    // set param
+    param = (ST_EXTEND_CONNECT_TIMEOUT_PARAM *)msg->data;
+    param->auth_timeout = auth_timeout;
+    param->asso_timeout = asso_timeout;
+    if (0 > ssv_private_msg_to_hci(sc, (u8*)msg, msg_total_len)) {
+        SSV_LOG_DBG("Fail to send private command\n");
+    }
+
+    kfree(msg);
+    return 0;
+}
+
+int ssv_send_sta_detect_bcn_timeout_setting(struct ssv_softc *sc, u32 sta_detect_bcn_timeout)
+{
+    ST_IPC_PRIV_MSG *msg = NULL;
+    ST_STA_DETECT_BCN_TIMEOUT_PARAM *param = NULL;
+    u32 msg_total_len = 0;
+
+    msg_total_len = (u32)(sizeof(ST_IPC_PRIV_MSG)+sizeof(ST_STA_DETECT_BCN_TIMEOUT_PARAM));
+    msg = kzalloc(msg_total_len+1, GFP_KERNEL);
+
+    if (!msg) {
+        SSV_LOG_DBG("Fail to alloc extend connect timeout msg\n");
+        return 0; 
+    }
+    
+    // set msg id
+    msg->msgid = E_IPC_PRIV_MSG_TYPE_STA_DETECT_BCN_TIMEOUT;
+    msg->msglen = sizeof(ST_STA_DETECT_BCN_TIMEOUT_PARAM);
+    // set param
+    param = (ST_STA_DETECT_BCN_TIMEOUT_PARAM *)msg->data;
+    param->timeout = sta_detect_bcn_timeout;
+    if (0 > ssv_private_msg_to_hci(sc, (u8*)msg, msg_total_len)) {
+        SSV_LOG_DBG("Fail to send private command\n");
+    }
+
+    kfree(msg);
+    return 0;
+}
+
+int ssv_send_data_rate_update_freq(struct ssv_softc *sc, u32 freq)
+{
+    ST_IPC_PRIV_MSG *msg = NULL;
+    u32 *msg_data = NULL;
+    u32 msg_total_len = 0;
+
+    msg_total_len = (u32)(sizeof(ST_IPC_PRIV_MSG)+sizeof(u32));
+    msg = kzalloc(msg_total_len+1, GFP_KERNEL);
+
+    if (!msg) {
+        SSV_LOG_DBG("Fail to set ipc tx use one hwq\n");
+        return -1; 
+    }
+
+    // set msg id
+    msg->msgid = E_IPC_PRIV_MSG_TYPE_SET_RATE_FREQ;
+    msg->msglen = sizeof(u32);
+    // set param 
+    msg_data = (u32 *)&msg->data[0];
+    *msg_data = freq;
+    // SSV_LOG_DBG("[%s][%d] *msg_data = %u\n", __FUNCTION__, __LINE__, *msg_data);
+
+    if (0 > ssv_private_msg_to_hci(sc, (u8*)msg, msg_total_len)) {
+        SSV_LOG_DBG("Fail to send private command\n");
+    }
+
+    kfree(msg);
+    return 0;
+}
+
+int ssv_send_conn_specific_ap(struct ssv_softc *sc, u32 connect)
+{
+    ST_IPC_PRIV_MSG *msg = NULL;
+    ST_SPECIFIC_AP_PARAM *param = NULL;
+    u32 msg_total_len = 0;
+
+    msg_total_len = (u32)(sizeof(ST_IPC_PRIV_MSG)+sizeof(ST_SPECIFIC_AP_PARAM));
+    msg = kzalloc(msg_total_len+1, GFP_KERNEL);
+
+    if (!msg) {
+        SSV_LOG_DBG("Fail to alloc specific ap msg\n");
+        return 0; 
+    }
+    
+    // set msg id
+    msg->msgid = E_IPC_PRIV_MSG_TYPE_SPECIFIC_AP;
+    msg->msglen = sizeof(ST_SPECIFIC_AP_PARAM);
+    // set param
+    param = (ST_SPECIFIC_AP_PARAM *)msg->data;
+    param->spefic_ap_connect = connect;
+    if (0 > ssv_private_msg_to_hci(sc, (u8*)msg, msg_total_len)) {
+        SSV_LOG_DBG("Fail to send private command\n");
+    }
+
+    kfree(msg);
+    return 0;
+}
+
+int ssv_send_force_txrate_sgi_off_req(struct ssv_softc *sc, u8 off)
+{
+    ST_IPC_PRIV_MSG *msg = NULL;
+    u8 *msg_data = NULL;
+    u32 msg_total_len = 0;
+
+    msg_total_len = (u32)(sizeof(ST_IPC_PRIV_MSG)+sizeof(u8));
+    msg = kzalloc(msg_total_len+1, GFP_KERNEL);
+
+    if (!msg) {
+        SSV_LOG_DBG("Fail to alloc txrate force sgi off req\n");
+        return -1; 
+    }
+
+    // set msg id
+    msg->msgid = E_IPC_PRIV_MSG_TYPE_TXRATE_SGI_OFF_REQ;
+    msg->msglen = sizeof(u8);
+    // set param 
+    msg_data = (u8 *)&msg->data[0];
+    *msg_data = off;
+     //SSV_LOG_DBG("[%s][%d] *msg_data = %u, msg_total_len=%d,msg->msgid=%d\n", __FUNCTION__, __LINE__, *msg_data, msg_total_len, msg->msgid);
+
+    if (0 > ssv_private_msg_to_hci(sc, (u8*)msg, msg_total_len)) {
+        SSV_LOG_DBG("Fail to send private command\n");
+    }
+
+    kfree(msg);
+    return 0;
+}

@@ -68,8 +68,18 @@ enum
     TID_6,
     TID_7,
     TID_MGT,
-    TID_NOQOS = TID_MGT,
+    TID_NOQOS = TID_MGT,//key index 0 use
+    TID_NOQOS1,//key index 1 use
     TID_MAX
+};
+
+enum
+{
+    TID_NOQOS_KEY_IDX_0,
+    TID_NOQOS_KEY_IDX_1,
+    TID_NOQOS_KEY_IDX_2,
+    TID_NOQOS_KEY_IDX_3,
+    TID_NOQOS_KEY_IDX_MAX
 };
 
 /// Access Category enumeration
@@ -123,6 +133,8 @@ enum
     /// Bit indicating that a STA has HE capability
     STA_HE_CAPA = 1 << 5,
 //#endif
+    /// Bit Inidcating support for short Preamble in ERP
+    STA_SHORT_PREAMBLE_CAPA = 1 << 6,
 };
 
 /// Connection flags

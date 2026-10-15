@@ -107,15 +107,21 @@ static struct notifier_block netdev_notifier = {
  * - Start FW if this is the first interface opened
  * - Add interface at fw level
  */
+static bool bInit = false;
+static bool b_1st_add_if = false;
 static int ssv_open(struct net_device *dev)
 {
     struct ssv_vif *ssv_vif = netdev_priv(dev);
     struct ssv_softc *sc = ssv_vif->sc;
     struct mm_add_if_cfm add_if_cfm;
     int error = 0;
-    static bool bInit = false;
 
     // SSV_LOG_DBG("[%s][%d]\n", __FUNCTION__, __LINE__);
+
+    if (true == ssv_vif->up) {
+        SSV_LOG_DBG("%s keep old vif\n", __FUNCTION__);
+        return 0;
+    }
 
     // Check if it is the first opened VIF
     if ((sc->vif_started == 0) && (false == bInit))
@@ -150,7 +156,11 @@ static int ssv_open(struct net_device *dev)
         /* Forward the information to the LMAC,
          *     p2p value not used in FMAC configuration, iftype is sufficient */
         
-        sc->recovery_flag = true;
+        if(false==b_1st_add_if){
+            sc->recovery_flag = true;
+            b_1st_add_if=true;
+        }
+       
         if (false == ssv_vif->use_monitor) 
         {
             if ((error = ssv_send_add_if(sc, dev->dev_addr,
@@ -276,6 +286,17 @@ static int ssv_close(struct net_device *dev)
         cfg80211_scan_done(sc->scan_request, &info);
 #endif
         sc->scan_request = NULL;
+    }
+    
+    if (NL80211_IFTYPE_STATION == SSV_VIF_TYPE(ssv_vif)) {
+        if ((int)SSV_DRV_STATUS_CONNECTING == (int)atomic_read(&ssv_vif->drv_conn_state)) {
+            SSV_LOG_DBG("%s, in connecting\n", __FUNCTION__);
+            return -ENOTSUPP;
+        }
+        if((int)SSV_DRV_STATUS_DISCONNECTING == (int)atomic_read(&ssv_vif->drv_conn_state)) {
+            SSV_LOG_DBG("%s, in disconnecting\n", __FUNCTION__);
+            return -ENOTSUPP;
+        }
     }
 
     if (false == ssv_vif->use_monitor) 
@@ -519,6 +540,7 @@ struct wireless_dev *ssv_interface_add(struct ssv_softc *sc,
     vif->wdev.iftype = type;
     vif->up = false;
     vif->ch_index = SSV_CH_NOT_SET;
+    atomic_set(&vif->drv_conn_state, (int)SSV_DRV_STATUS_DISCONNECTED);
     memset(&vif->net_stats, 0, sizeof(vif->net_stats));
 
     ndev->type = ARPHRD_ETHER;

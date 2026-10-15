@@ -493,11 +493,22 @@ static int ssv6xxx_hci_aggr_xmit(struct ssv6xxx_hci_ctrl *hci_ctrl, struct ssv_s
     static u8 *p_cpy_dest = NULL;
     static bool aggr_done = false;
     static bool new_round  = 1;
+    static unsigned int tx_aggr_len=0;
     // end of variable for hci tx aggr
 
     skb_queue_head_init(&tx_cb_list);
     if(hci_ctrl->p_tx_aggr_skb ==NULL){
-        hci_ctrl->p_tx_aggr_skb = ssv_tx_skb_alloc(HCI_TX_AGGR_SKB_LEN, GFP_KERNEL);
+        for(tx_aggr_len=HCI_TX_AGGR_SKB_LEN;tx_aggr_len>=4096;tx_aggr_len-=2048){
+            SSV_LOG_DBG("alloc tx aggr skb size %d\n", tx_aggr_len);
+            hci_ctrl->p_tx_aggr_skb = ssv_tx_skb_alloc(tx_aggr_len, GFP_KERNEL);
+            if (NULL == hci_ctrl->p_tx_aggr_skb) {
+                SSV_LOG_ERR("Cannot alloc tx aggr skb size %d\n", tx_aggr_len);
+            }
+            else{
+                break;
+            }
+        }
+
         if (NULL == hci_ctrl->p_tx_aggr_skb) {
             SSV_LOG_ERR("Cannot alloc tx aggr skb size %d\n", HCI_TX_AGGR_SKB_LEN);
             BUG_ON(1);
@@ -543,7 +554,7 @@ static int ssv6xxx_hci_aggr_xmit(struct ssv6xxx_hci_ctrl *hci_ctrl, struct ssv_s
         //ampdu1.3
         if(1 == new_round) {
             p_cpy_dest = p_aggr_skb->data;
-            left_len = HCI_TX_AGGR_SKB_LEN;
+            left_len = tx_aggr_len;
             new_round = 0;
         }
 
@@ -784,6 +795,7 @@ static int ssv6xxx_hci_tx_task (void *data)
 #endif
     SSV_LOG_DBG("SSV6XXX HCI TX Task started.\n");
 
+    hci_ctrl->tx_task_started = true;
     while (!kthread_should_stop())
     {
         hci_ctrl->tx_timestamp = jiffies;
@@ -843,6 +855,7 @@ static int ssv6xxx_hci_tx_task (void *data)
 
         if (kthread_should_stop())
         {
+            hci_ctrl->tx_task_started = false;
             hci_ctrl->hci_tx_task = NULL;
             SSV_LOG_DBG("Quit HCI TX task loop...\n");
             break;
@@ -917,6 +930,7 @@ static int ssv6xxx_hci_tx_task (void *data)
         }
     }
 
+    hci_ctrl->tx_task_started = false;
     hci_ctrl->hci_tx_task = NULL;
 
     SSV_LOG_DBG("SSV6XXX HCI TX Task end.\n");
@@ -1042,6 +1056,7 @@ int ssv6xxx_hci_rx_task (void *data)
     unsigned long     wait_period = msecs_to_jiffies(3);
 
     SSV_LOG_DBG("SSV6XXX HCI RX Task started.\n");
+    hci_ctrl->rx_task_started = true;
     while (!kthread_should_stop())
     {
         u32 before_timeout = (-1);
@@ -1081,6 +1096,7 @@ int ssv6xxx_hci_rx_task (void *data)
         }
     }
 
+    hci_ctrl->rx_task_started = false;
     hci_ctrl->hci_rx_task = NULL;
 
     return 0;
@@ -1257,24 +1273,40 @@ int ssv6xxx_hci_deinit(void *hci_priv)
     SSV_LOG_DBG("%s(): \n", __FUNCTION__);
 
     hci_ctrl = hci_priv;
+    
+    HCI_RX_TASK(hci_ctrl, NULL, NULL, 0);
 
     if (hci_ctrl->hci_rx_task != NULL)
     {
-        SSV_LOG_DBG("Stopping HCI RX task...\n");
-        kthread_stop(hci_ctrl->hci_rx_task);
-        while(hci_ctrl->hci_rx_task != NULL) {
-            msleep(1);
+        if (hci_ctrl->rx_task_started)
+        {
+            SSV_LOG_DBG("Stopping HCI RX task...\n");
+            kthread_stop(hci_ctrl->hci_rx_task);
+            while(hci_ctrl->hci_rx_task != NULL) {
+                msleep(1);
+            }
+            SSV_LOG_DBG("Stopped HCI RX task.\n");
         }
-        SSV_LOG_DBG("Stopped HCI RX task.\n");
+        else
+        {
+            SSV_LOG_DBG("HCI RX task no start...\n");
+        }
     }
     if (hci_ctrl->hci_tx_task != NULL)
     {
-        SSV_LOG_DBG("Stopping HCI TX task...\n");
-        kthread_stop(hci_ctrl->hci_tx_task);
-        while(hci_ctrl->hci_tx_task != NULL) {
-            msleep(1);
+        if (hci_ctrl->tx_task_started)
+        {
+            SSV_LOG_DBG("Stopping HCI TX task...\n");
+            kthread_stop(hci_ctrl->hci_tx_task);
+            while(hci_ctrl->hci_tx_task != NULL) {
+                msleep(1);
+            }
+            SSV_LOG_DBG("Stopped HCI TX task.\n");
         }
-        SSV_LOG_DBG("Stopped HCI TX task.\n");
+        else
+        {
+            SSV_LOG_DBG("HCI TX task no start...\n");
+        }
     }
     
     // flush txq/rxq packet 
@@ -1297,7 +1329,6 @@ int ssv6xxx_hci_init(void **hci_priv, void* hwif_priv,struct device *dev)
 {
     int i;
     struct ssv6xxx_hci_ctrl *hci_ctrl;
-
     hci_ctrl = kzalloc(sizeof(*hci_ctrl), GFP_KERNEL);
     if (hci_ctrl == NULL){
         SSV_LOG_DBG("Fail to alloc hci_ctrl\n");
@@ -1325,11 +1356,12 @@ int ssv6xxx_hci_init(void **hci_priv, void* hwif_priv,struct device *dev)
 
     /* TX Task initialization */
     init_waitqueue_head(&hci_ctrl->tx_wait_q);
+    hci_ctrl->tx_task_started = false;
     hci_ctrl->hci_tx_task = kthread_run(ssv6xxx_hci_tx_task, hci_ctrl, "ssv6xxx_hci_tx_task");
-
     /* RX Task initialization */
     init_waitqueue_head(&hci_ctrl->rx_wait_q);
     skb_queue_head_init(&hci_ctrl->rx_skb_q);
+    hci_ctrl->rx_task_started = false;
     hci_ctrl->hci_rx_task = kthread_run(ssv6xxx_hci_rx_task, hci_ctrl, "ssv6xxx_hci_rx_task");
     HCI_RX_TASK(hci_ctrl, ssv6xxx_hci_rx, ssv6xxx_hci_is_rx_q_full, 2);
     

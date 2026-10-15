@@ -236,18 +236,44 @@ static void _ssv_rx_mib(struct ssv_softc *sc, u8 *data, bool is_80211, u8 sta_id
 
 static void ssv_netif_receive_skb(struct sk_buff *skb)
 {
-    struct net_device *ndev = skb->dev;
-    struct ssv_vif *ssv_vif = netdev_priv(ndev);
-    struct ssv_softc *sc = (struct ssv_softc *)ssv_vif->sc;
-    struct ethhdr *eth = (void *)skb->data;
-    int mcast = is_multicast_ether_addr(eth->h_dest);
+    struct net_device *ndev = NULL;
+    struct ssv_vif *ssv_vif = NULL;
+    struct ssv_softc *sc = NULL;
+    struct ethhdr *eth = NULL;
+    int mcast = 0, bcast = 0;
     struct sk_buff *skb_copy = NULL;
     bool resend = false, forward = true;
     
+    ndev = skb->dev;
+    if (!ndev){
+        dev_kfree_skb_any(skb);
+        return;
+    }
+
+    ssv_vif = netdev_priv(ndev);
     if (!ssv_vif) {
         dev_kfree_skb_any(skb);
         return;
     }
+    sc = (struct ssv_softc *)ssv_vif->sc;
+    eth = (void *)skb->data;
+    mcast = is_multicast_ether_addr(eth->h_dest);
+    bcast = is_broadcast_ether_addr(eth->h_dest);
+
+    if (NL80211_IFTYPE_STATION == SSV_VIF_TYPE(ssv_vif)) 
+    {
+         if (NULL != ssv_vif->sta.ap) 
+         {
+            if ((mcast || bcast) && (!memcmp(ssv_vif->ndev->dev_addr, eth->h_source,
+                       ETH_ALEN)))
+            {
+                dev_kfree_skb_any(skb);
+                //SSV_LOG_DBG("[%s][%d] src addr is mine, drop packet\n", __FUNCTION__, __LINE__);
+                return; 
+            }
+        }
+    }
+    
     if ((NL80211_IFTYPE_AP == SSV_VIF_TYPE(ssv_vif) || (NL80211_IFTYPE_AP_VLAN ==  SSV_VIF_TYPE(ssv_vif))) && 
         !(ssv_vif->ap.flags & SSV_AP_ISOLATE)) {
         if (mcast) {
@@ -837,13 +863,21 @@ void ssv_rxreord_free_all(struct ssv_softc *sc, u8 sta_idx)
     //SSV_LOG_DBG("free all before\n");
     for(i = 0; i < TID_MAX; i++) {
         rx_reord = &sc->sta_table[sta_idx].reord_info.ba_agmts_rx[i];
-        for (j = 0;  j < RX_CNTRL_REORD_WIN_SIZE; j++) {
-            uint8_t index =( j % RX_CNTRL_REORD_WIN_SIZE);
-            elt = &rx_reord->elt[index];
-            //SSV_LOG_DBG("free skb: [%d]%p\n",index, elt->skb);            
-            if (elt->skb) {
-                dev_kfree_skb_any(elt->skb);
-                elt->skb = NULL;
+        if(rx_reord->active == true) {
+            for (j = 0;  j < RX_CNTRL_REORD_WIN_SIZE; j++) {
+                uint8_t index =( j % RX_CNTRL_REORD_WIN_SIZE);
+                elt = &rx_reord->elt[index];
+                //SSV_LOG_DBG("free skb: [%d]%p\n",index, elt->skb);            
+                if (elt->skb) {
+                    dev_kfree_skb_any(elt->skb);
+                    elt->skb = NULL;
+                }
+            }
+            if(rx_reord->elt != NULL) {
+                kfree(rx_reord->elt);
+                rx_reord->elt = NULL;
+            } else {
+                SSV_LOG_DBG("===elt is null, need check===\n");
             }
         }
     }
@@ -859,12 +893,14 @@ void ssv_rxreord_flush_tid(struct ssv_softc *sc, u8 sta_idx, u8 tid)
     if(sc->sta_table[sta_idx].reord_info.connect == 1) {
         //mutex_lock(&sc->sta_table[sta_idx].reord_info.data_mutex);
         rx_reord = &sc->sta_table[sta_idx].reord_info.ba_agmts_rx[tid];
-        for (i = 0;  i < RX_CNTRL_REORD_WIN_SIZE; i++) {
-            elt = &rx_reord->elt[i];
-            if (elt->skb) {
-                //SSV_LOG_DBG("upload skb: [%d]%p\n",i, elt->skb);    
-                ssv_netif_receive_skb(elt->skb);
-                elt->skb = NULL;
+        if(rx_reord->active == true) {
+            for (i = 0;  i < RX_CNTRL_REORD_WIN_SIZE; i++) {
+                elt = &rx_reord->elt[i];
+                if (elt->skb) {
+                    //SSV_LOG_DBG("upload skb: [%d]%p\n",i, elt->skb);    
+                    ssv_netif_receive_skb(elt->skb);
+                    elt->skb = NULL;
+                }
             }
         }
         //mutex_unlock(&sc->sta_table[sta_idx].reord_info.data_mutex);
@@ -894,14 +930,16 @@ void ssv_rxreord_tid_dump(struct ssv_softc *sc, struct host_reorder_info *rx_reo
     uint8_t tid = (rx_reorder_info->tid > TID_7 ? TID_NOQOS: rx_reorder_info->tid);
     rx_reord = &sc->sta_table[rx_reorder_info->sta_idx].reord_info.ba_agmts_rx[tid];
     SSV_LOG_DBG("tid: %d start: %d %d pos: %d pkt_cnt: %d pn: %lld ",tid, rx_reord->first_win_start, rx_reord->win_start, rx_reord->rx_status_pos, rx_reord->ooo_pkt_cnt, rx_reord->pn);
-    for (i = 0;  i < RX_CNTRL_REORD_WIN_SIZE; i++) {
-        elt = &rx_reord->elt[i];
-        if(elt->skb == NULL)
-            SSV_LOG_DBG("0 ");
-        else
-            SSV_LOG_DBG("%p ", elt->skb);
+    if(rx_reord->active == true) {
+        for (i = 0;  i < RX_CNTRL_REORD_WIN_SIZE; i++) {
+            elt = &rx_reord->elt[i];
+            if(elt->skb == NULL)
+                SSV_LOG_DBG("0 ");
+            else
+                SSV_LOG_DBG("%p ", elt->skb);
+        }
+        SSV_LOG_DBG("\n");
     }
-    SSV_LOG_DBG("\n");
 }
 
 bool ssv_rxreord_update_rxinfo_and_upload(struct ssv_softc *sc, struct host_reorder_info *rx_reorder_info)
@@ -919,22 +957,48 @@ bool ssv_rxreord_update_rxinfo_and_upload(struct ssv_softc *sc, struct host_reor
             //SSV_LOG_DBG("rxreord_update_rxinfo_and_upload flush\n");
 
             ssv_rxreord_flush_tid(sc, rx_reorder_info->sta_idx, rx_reorder_info->tid);
+            if(rx_reord->elt != NULL) {
+                kfree(rx_reord->elt);
+                rx_reord->elt = NULL;
+            } else {
+                SSV_LOG_DBG("===elt is null, need check===\n");
+            }
             memset(rx_reord, 0, sizeof(struct rxu_cntrl_reord));
             SSV_LOG_DBG("===delete reorder tid: %d win_start: %d win_end: %d===\n", tid, rx_reord->first_win_start, rx_reord->win_end);
         }
         // Perform the PN check if required
         if (rx_reorder_info->frame_info & RXU_CNTRL_PN_CHECK_NEEDED) {
-            if(ssv_reord_check_pn(rx_reorder_info->pn, rx_reord->pn) == true) {
-                rx_reord->pn = rx_reorder_info->pn;
-            } else {
-                upload = false;
+            if((tid >=TID_0) && (tid <=TID_7)){ //QoS Data
+                if(ssv_reord_check_pn(rx_reorder_info->pn, rx_reord->pn) == true) {
+                    rx_reord->pn = rx_reorder_info->pn;
+                } else {
+                    upload = false;
+                }
+            } else {//not QoS Data
+                if(rx_reorder_info->key_idx < TID_NOQOS_KEY_IDX_MAX) {
+                    if(rx_reord->now_keyidx != rx_reorder_info->key_idx) {
+                        rx_reord->now_keyidx = rx_reorder_info->key_idx;
+                        rx_reord->pn_noqos[rx_reorder_info->key_idx] = 0;
+                    }
+                    if(ssv_reord_check_pn(rx_reorder_info->pn, rx_reord->pn_noqos[rx_reorder_info->key_idx]) == true) {
+                        rx_reord->pn_noqos[rx_reorder_info->key_idx] = rx_reorder_info->pn;
+                    } else {
+                        upload = false;
+                    }
+                } else {
+                    SSV_LOG_DBG("===warning, idx key not match: %d===\n", rx_reorder_info->key_idx);
+                }
             }
         }
         if((tid >=TID_0) && (tid <=TID_7)){ //QoS Data
             last_seq_cntl = &(sc->sta_table[rx_reorder_info->sta_idx].rx_last_seqcntl[rx_reorder_info->tid]);
         }
         else{ //not QoS Data
-            last_seq_cntl = &(sc->sta_table[rx_reorder_info->sta_idx].rx_last_seqcntl[TID_NOQOS]);
+            if(rx_reorder_info->key_idx == 1) {
+                last_seq_cntl = &(sc->sta_table[rx_reorder_info->sta_idx].rx_last_seqcntl[TID_NOQOS1]);
+            } else {
+                last_seq_cntl = &(sc->sta_table[rx_reorder_info->sta_idx].rx_last_seqcntl_noqos[rx_reorder_info->key_idx]);
+            }
         }
 
         if((rx_reorder_info->cookie == 1)&&
@@ -956,6 +1020,10 @@ reorder_check:
             rx_reord->tid = tid;
             rx_reord->sn_rx_time = jiffies_to_msecs(jiffies);
             rx_reord->active = true;
+            rx_reord->elt = (struct rxu_cntrl_reord_elt *)kzalloc(sizeof(struct rxu_cntrl_reord_elt) * RX_CNTRL_REORD_WIN_SIZE, GFP_KERNEL);
+            if(rx_reord->elt == NULL) {
+                SSV_LOG_DBG("===elt malloc fail, need check===\n");
+            }
             //SSV_LOG_DBG("rxreord_update_rxinfo_and_upload init: %d %d %d\n", rx_reord->win_start, rx_reord->first_win_start, rx_reord->win_end);
             SSV_LOG_DBG("===create reorder tid: %d win_start: %d win_end: %d===\n", tid, rx_reord->first_win_start, rx_reord->win_end);
         } else {
@@ -963,6 +1031,12 @@ reorder_check:
                    //flush old data, and tid re-create
                     SSV_LOG_DBG("i think maybe not goto here\n");
                     ssv_rxreord_flush_tid(sc, rx_reorder_info->sta_idx, rx_reorder_info->tid);
+                    if(rx_reord->elt != NULL) {
+                        kfree(rx_reord->elt);
+                        rx_reord->elt = NULL;
+                    } else {
+                        SSV_LOG_DBG("===elt is null, need check===\n");
+                    }
                     memset(rx_reord, 0, sizeof(struct rxu_cntrl_reord));
                     SSV_LOG_DBG("===delete reorder tid: %d win_start: %d win_end: %d===\n", tid, rx_reord->first_win_start, rx_reord->win_end);
                     goto reorder_check;
@@ -1038,6 +1112,7 @@ void ssv_rxreord_delete(struct ssv_softc *sc, u8 sta_idx)
     //mutex_lock(&sc->sta_table[sta_idx].reord_info.data_mutex);
     sc->sta_table[sta_idx].reord_info.connect = 0;
     ssv_rxreord_free_all(sc, sta_idx);
+    
     memset(&sc->sta_table[sta_idx].reord_info.ba_agmts_rx, 0, sizeof(struct rxu_cntrl_reord)*TID_MAX);
     //mutex_unlock(&sc->sta_table[sta_idx].reord_info.data_mutex);
 }
@@ -1157,7 +1232,7 @@ static void ssv_rx_mgmt(struct ssv_softc *sc, struct ssv_vif *ssv_vif,
     if (is_broadcast_ether_addr(mgmt->da)) {
         struct ssv_vif *tmp_vif = NULL;
         list_for_each_entry(tmp_vif, &sc->vifs, list) {
-            if (tmp_vif->up) {
+            if ((tmp_vif->up) && (NL80211_IFTYPE_AP == SSV_VIF_TYPE(ssv_vif))) {
                 _ssv_rx_mgmt(sc, tmp_vif, skb, rx_info);
             }
         }
@@ -1224,10 +1299,8 @@ void ssv_rx_sw_ack_handler(struct ssv_softc *sc, struct txdesc_api *msg_desc_api
                     (clone_skb->cb[3] == 'g') && (clone_skb->cb[4] == 'm') && (clone_skb->cb[5] == 'a') && 
                     (clone_skb->cb[6] == 'c')) {
 
-#ifndef SSV_NO_LOG
                     unsigned long end = jiffies;
                     SSV_LOG_DBG(KERN_INFO "Get ping response from MAC layer: seq=%u time=%u ms\n", msg_desc_api->host.sw_seq, jiffies_to_msecs(end - sc->ssv_ping.start));
-#endif
                     sc->ssv_ping.result = true;
                     dev_kfree_skb_any(clone_skb);
                 } else {
@@ -1279,7 +1352,7 @@ void ssv6xxx_check_fw_status_process(struct ssv_softc *sc)
     u32 cur_status_cnt = 0;
 
     ssv_drv_hci_read_word(sc->hci_priv, sc->hci_ops, 0x08d010f8, &cur_status_cnt);
-    sc->fw_cur_status_cnt = cur_status_cnt;
+    sc->fw_cur_status_cnt = (cur_status_cnt & 0x00ffffff);
 
     if(sc->fw_cur_status_cnt != sc->fw_pre_status_cnt)
     {
@@ -1293,6 +1366,22 @@ void ssv6xxx_check_fw_status_process(struct ssv_softc *sc)
             SSV_LOG_DBG("[%s] Not detect FW status for %d times(over %d ms), the FW will be reloaded.\n", __FUNCTION__, sc->fw_cur_status_idle_time, sc->fw_cur_status_idle_time*100); //100 = TIMEOUT_CHECK_FW_STATUS
             queue_work(sc->fw_reset_wq, &sc->fw_reset_work);
             sc->fw_cur_status_idle_time = 0;
+        }
+    }
+}
+
+void ssv_update_sta_data_rate(struct ssv_softc *sc, u8* data)
+{
+    ST_ALL_DATA_RATE *rc_sta= (ST_ALL_DATA_RATE *)data;
+    struct ssv_sta *sta;
+    int idx = 0;
+    for(idx=0; idx<13; idx++)
+    {
+        if(rc_sta->sta_rate[idx].valid)
+        {
+            sta = &sc->sta_table[idx];
+            sta->rate_config.value = rc_sta->sta_rate[idx].rate_config;
+            // SSV_LOG_DBG("idx %d, rate config: 0x%x\n", idx, sta->rate_config.value);
         }
     }
 }
@@ -1381,10 +1470,8 @@ static int ssv_rx_priv_msg_handler(struct ssv_softc *sc, struct sk_buff *skb)
         }
         case E_IPC_PRIV_MSG_TYPE_PING_IPC_IND:
         {
-#ifndef SSV_NO_LOG
             unsigned long end = jiffies;
             SSV_LOG_DBG(KERN_INFO "Get ping response from IPC layer: seq=%u time=%u ms\n", *(unsigned int *)msg->data, jiffies_to_msecs(end - sc->ssv_ping.start));
-#endif
             if (*(unsigned int *)msg->data == sc->ssv_ping.seq) {
                 int i;
                 bool check = true;
@@ -1395,6 +1482,13 @@ static int ssv_rx_priv_msg_handler(struct ssv_softc *sc, struct sk_buff *skb)
                 }
                 sc->ssv_ping.result = check;
             }
+            dev_kfree_skb_any(skb);
+            break;
+        }
+        case E_IPC_PRIV_MSG_TYPE_UPDATE_RATE:
+        {
+        //    SSV_LOG_DBG("[%s][%d] E_IPC_PRIV_MSG_TYPE_UPDATE_RATE!!\n", __FUNCTION__, __LINE__);
+            ssv_update_sta_data_rate(sc, msg->data);
             dev_kfree_skb_any(skb);
             break;
         }
@@ -2022,7 +2116,8 @@ int ssv_rx_packet_ind(void *app_param, struct sk_buff *skb)
             struct ssv_vif *ssv_vif = ssv_rx_get_vif(sc, vif_idx);
             bool is_80211 = (rx_info->flags & RX_FLAGS_IS_MPDU_BIT)?true:false;
             enum data_frame_types data_type = SSV_DATA_UNKNOW;
-        
+            struct ethhdr *ethhdr = NULL;
+
             // SSV_LOG_DBG("[%s][%d] skb-len = %d, real_pkt_len = %u\n", __FUNCTION__, __LINE__, skb->len, real_pkt_len);
 
             if (NULL == ssv_vif)
@@ -2031,7 +2126,11 @@ int ssv_rx_packet_ind(void *app_param, struct sk_buff *skb)
                 // SSV_LOG_DBG("[%s][%d] NULL == ssv_vif\n", __FUNCTION__, __LINE__);
                 return 0;
             }
-
+            if (NULL == ssv_vif->ndev) {
+                dev_kfree_skb_any(skb);
+                SSV_LOG_DBG("[%s][%d] ndev is NULL\n", __FUNCTION__, __LINE__);
+                return 0;
+            }
             if(false == is_80211){
                 data_type = ssv_get_data_frame_type(skb);
             }
@@ -2114,8 +2213,10 @@ int ssv_rx_packet_ind(void *app_param, struct sk_buff *skb)
             skb->protocol = eth_type_trans(skb, ssv_vif->ndev);
             memset(skb->cb, 0, sizeof(skb->cb));
         #endif
+
+            ethhdr = (struct ethhdr *)skb->data;
             //check data is reorder to host pattern 
-            if(rx_reorder_info->upattern == RX_HOST_REORD_PATTERN) {
+            if((rx_reorder_info->upattern == RX_HOST_REORD_PATTERN) && (!(ethhdr->h_dest[0] & 0x01))) {
                 if(sc->sta_table[rx_reorder_info->sta_idx].reord_info.level == 1) {
                     ssv_rxreord_info_dump(rx_reorder_info);
                     ssv_rxreord_tid_dump(sc, rx_reorder_info);

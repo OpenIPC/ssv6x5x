@@ -60,6 +60,7 @@ struct ssv6xxx_hci_ctrl {
     atomic_t sw_txq_cnt;
     wait_queue_head_t   tx_wait_q;
     struct task_struct *hci_tx_task;
+    bool tx_task_started;
     unsigned long tx_timestamp;
     unsigned long rx_timestamp;
     bool tx_trigger_en;
@@ -70,6 +71,7 @@ struct ssv6xxx_hci_ctrl {
     wait_queue_head_t   rx_wait_q;
     struct sk_buff_head rx_skb_q;
     struct task_struct *hci_rx_task;
+    bool rx_task_started;
 
     bool hw_tx_resource_full;
     u32  hw_tx_resource_full_cnt;

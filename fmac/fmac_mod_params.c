@@ -723,6 +723,7 @@ int ssv_handle_dynparams(struct ssv_softc *sc, struct wiphy *wiphy)
         band_2GHz->ht_cap.cap |= IEEE80211_HT_CAP_SUP_WIDTH_20_40;
         band_2GHz->ht_cap.mcs.rx_highest = cpu_to_le16(135 * nss);
     } else {
+        band_2GHz->ht_cap.cap &= ~IEEE80211_HT_CAP_SUP_WIDTH_20_40;
         band_2GHz->ht_cap.mcs.rx_highest = cpu_to_le16(65 * nss);
     }
     if (nss > 1)
@@ -826,6 +827,8 @@ int ssv_handle_dynparams(struct ssv_softc *sc, struct wiphy *wiphy)
         band_2GHz->n_iftype_data = 0;
         //band_5GHz->iftype_data = NULL;
         //band_5GHz->n_iftype_data = 0;
+        wiphy->max_scan_ssids = SCAN_SSID_MAX;
+        wiphy->max_scan_ie_len = IEEE80211_MAX_DATA_LEN;
         return 0;
     }
 
@@ -874,11 +877,12 @@ int ssv_handle_dynparams(struct ssv_softc *sc, struct wiphy *wiphy)
 #endif
     he_cap->he_cap_elem.phy_cap_info[3] |= IEEE80211_HE_PHY_CAP3_DCM_MAX_RX_NSS_1;
 
-    if (sc->mod_params->bfmee) {
-        he_cap->he_cap_elem.phy_cap_info[4] |= IEEE80211_HE_PHY_CAP4_SU_BEAMFORMEE;
-        he_cap->he_cap_elem.phy_cap_info[4] |=
-                     IEEE80211_HE_PHY_CAP4_BEAMFORMEE_MAX_STS_UNDER_80MHZ_4;
-    }
+    // by phy team request, mark the flag
+    //if (sc->mod_params->bfmee) {
+    //    he_cap->he_cap_elem.phy_cap_info[4] |= IEEE80211_HE_PHY_CAP4_SU_BEAMFORMEE;
+    //    he_cap->he_cap_elem.phy_cap_info[4] |=
+    //                 IEEE80211_HE_PHY_CAP4_BEAMFORMEE_MAX_STS_UNDER_80MHZ_4;
+    //}
     
     he_cap->he_cap_elem.phy_cap_info[5] |= IEEE80211_HE_PHY_CAP5_NG16_SU_FEEDBACK;
     he_cap->he_cap_elem.phy_cap_info[6] |= IEEE80211_HE_PHY_CAP6_PARTIAL_BW_EXT_RANGE |
@@ -890,10 +894,17 @@ int ssv_handle_dynparams(struct ssv_softc *sc, struct wiphy *wiphy)
                                            IEEE80211_HE_PHY_CAP6_PPE_THRESHOLD_PRESENT;
     he_cap->he_cap_elem.phy_cap_info[7] |= IEEE80211_HE_PHY_CAP7_HE_SU_MU_PPDU_4XLTF_AND_08_US_GI |
                                            IEEE80211_HE_PHY_CAP7_MAX_NC_1;
+    // by phy team request, mark the flag IEEE80211_HE_PHY_CAP8_20MHZ_IN_40MHZ_HE_PPDU_IN_2G
+#if 0
     he_cap->he_cap_elem.phy_cap_info[8] |= IEEE80211_HE_PHY_CAP8_HE_ER_SU_1XLTF_AND_08_US_GI |
                                            IEEE80211_HE_PHY_CAP8_20MHZ_IN_40MHZ_HE_PPDU_IN_2G |
                                            IEEE80211_HE_PHY_CAP8_HE_ER_SU_PPDU_4XLTF_AND_08_US_GI |
                                            dcm_max_ru;
+#else
+    he_cap->he_cap_elem.phy_cap_info[8] |= IEEE80211_HE_PHY_CAP8_HE_ER_SU_1XLTF_AND_08_US_GI |
+                                           IEEE80211_HE_PHY_CAP8_HE_ER_SU_PPDU_4XLTF_AND_08_US_GI |
+                                           dcm_max_ru;
+#endif
     he_cap->he_cap_elem.phy_cap_info[9] |= IEEE80211_HE_PHY_CAP9_NON_TRIGGERED_CQI_FEEDBACK |
                                            IEEE80211_HE_PHY_CAP9_RX_FULL_BW_SU_USING_MU_WITH_COMP_SIGB |
                                            IEEE80211_HE_PHY_CAP9_RX_FULL_BW_SU_USING_MU_WITH_NON_COMP_SIGB |
@@ -985,10 +996,8 @@ int ssv_handle_dynparams(struct ssv_softc *sc, struct wiphy *wiphy)
         }
     }
 
-
     wiphy->max_scan_ssids = SCAN_SSID_MAX;
     wiphy->max_scan_ie_len = IEEE80211_MAX_DATA_LEN;
-
     /**
      * adjust caps with lower layers sc->version_cfm
      */

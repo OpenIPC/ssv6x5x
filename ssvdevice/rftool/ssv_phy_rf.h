@@ -40,5 +40,6 @@ int ssv_set_rf_conf_table(struct ssv_hw *sh);
 int ssv_set_pll_phy_rf(struct ssv_hw *sh);
 void ssv_6030_rf(struct ssv_hw *sh, int argc, char *argv[]);
 void ssv_6030_rfble(struct ssv_hw *sh, int argc, char *argv[]);
+void ssv_6030_update_rf(struct ssv_hw *sh, int argc, char *argv[]);
 int ssv_res_rf_update_to_cfg(void* param);
 #endif

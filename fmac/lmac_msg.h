@@ -2184,16 +2184,19 @@ struct sm_external_auth_required_ind
     struct mac_addr bssid;
     /// AKM suite of the respective authentication
     uint32_t akm;
-};
+}SSV_PACKED_STRUCT_STRUCT;
+SSV_PACKED_STRUCT_END
 
 SSV_PACKED_STRUCT_BEGIN
 struct sm_external_auth_required_rsp
 {
     /// Index of the VIF
     uint8_t vif_idx;
+    uint8_t pack_byte;
     /// Authentication status
     uint16_t status;
-};
+}SSV_PACKED_STRUCT_STRUCT;
+SSV_PACKED_STRUCT_END
 
 ///////////////////////////////////////////////////////////////////////////////
 /////////// For SM messages

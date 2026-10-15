@@ -70,7 +70,9 @@ endif
 ifeq ($(CONFIG_BLE),y)
 KERN_SRCS += ble/ble_hci/ble_hci.c
 KERN_SRCS += ble/ble_hci/ble_hci_msg.c
+ifneq ($(CONFIG_BLE_USE_LL_ONLY),y)
 KERN_SRCS += ble/ble_hci/hcidev_ops.c
+endif
 endif
 
 #------------------------------

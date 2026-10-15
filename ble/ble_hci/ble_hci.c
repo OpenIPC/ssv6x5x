@@ -34,7 +34,9 @@
 #include "ipc_msg.h"
 #include "ble_hci.h"
 #include "ble_hci_msg.h"
+#ifndef BLE_USE_LL_ONLY
 #include "hcidev_ops.h"
+#endif
 #include "ssv_cfg.h"
 #include "ssv_debug.h"
 
@@ -88,6 +90,11 @@ int ssv_ble_hci_init(void **plat_sbsc, struct ssv6xxx_hci_ops *hci_ops, void *hc
     sbsc->hci_ops = hci_ops;
     sbsc->dev = dev;
     memcpy(sbsc->maddr, maddr, 6);
+    //Modify mac address 
+    sbsc->maddr[5] ^= 0x1;
+    // SSV_LOG_DBG("BLE mac address 0x%02X:0x%02X:0x%02X:0x%02X:0x%02X:0x%02X\n",
+    //     sbsc->maddr[0], sbsc->maddr[1], sbsc->maddr[2], sbsc->maddr[3], sbsc->maddr[4], sbsc->maddr[5]);
+
 
     SSV_LOG_DBG("ble_hci_init\n");
     ssv6xxx_hci_proc_rx_register((void *)hci_priv, ssv_ble_hci_event, (void *)sbsc);
@@ -98,12 +105,17 @@ int ssv_ble_hci_init(void **plat_sbsc, struct ssv6xxx_hci_ops *hci_ops, void *hc
     #endif
 
     #if (CONFIG_BLE_HCI_BUS == SSV_BLE_HCI_OVER_HWIF)
+    #ifdef BLE_USE_LL_ONLY
+    ssv_drv_hci_ble_start(hci_priv, hci_ops);
+    ssv_ble_hci_send_bleinit(sbsc, 0);
+    #else
     SSV_LOG_DBG("cfg.ble_dtm %d\n", ssv_cfg.ble_dtm);
     if (ssv_cfg.ble_dtm) {
         ssv_drv_hci_ble_start(hci_priv, hci_ops);
         ssv_ble_hci_send_bleinit(sbsc, 0);
     } else
         ssv_ble_hci_dev_register(sbsc);
+    #endif
     #endif
     
     *plat_sbsc = sbsc;
@@ -122,8 +134,10 @@ void ssv_ble_hci_deinit(void *plat_sbsc)
     ssv_ble_hci_send_bleinit(sbsc, 1);
     
     ssv6xxx_hci_proc_rx_unregister((void *)sbsc->hci_priv, ssv_ble_hci_event, NULL);
-    
+
+#ifndef BLE_USE_LL_ONLY
     ssv_ble_hci_dev_unregister(sbsc);
+#endif
     SSV_LOG_DBG("ble_hci_deinit\n");
     kfree(sbsc);
     plat_sbsc = NULL;

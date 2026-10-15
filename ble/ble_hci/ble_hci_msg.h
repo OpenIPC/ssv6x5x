@@ -47,6 +47,7 @@
 void ssv_ble_hci_send_bleinit(struct ssv_ble_softc *sbsc, u8 reset_only);
 void ssv_ble_hci_send_packet(struct ssv_ble_softc *sbsc, char *buf, u16 buflen);
 int  ssv_ble_hci_event(void *app_param, struct sk_buff *skb);
+void ssv_ble_hci_send_scan_iwlist(struct ssv_ble_softc *sbsc, u8 *data);
 
 
 #endif /* __NIMBLE_MSG_H__ */

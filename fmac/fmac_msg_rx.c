@@ -545,6 +545,62 @@ static inline int ssv_rx_scanu_start_cfm(struct ssv_softc *sc,
     return 0;
 }
 
+static bool
+ssv_check_beacon_channel(struct ssv_softc *sc, struct ieee80211_mgmt *mgmt,size_t len,
+			 struct ieee80211_channel *channel, u32 *ie_ds_freq)
+{
+	const u8 *tmp;
+	int channel_number = -1;
+    u8 *ie;
+	size_t ielen = len - offsetof(struct ieee80211_mgmt,
+				      u.probe_resp.variable);
+    
+    if (!mgmt)
+    {
+        return false;
+    }
+    
+    ie = mgmt->u.beacon.variable;
+    
+	tmp = cfg80211_find_ie(WLAN_EID_DS_PARAMS, ie, ielen);
+	if (tmp && tmp[1] == 1) {
+		channel_number = tmp[2];
+	}
+    #if (LINUX_VERSION_CODE > KERNEL_VERSION(3, 8, 0)) 
+    else {
+		tmp = cfg80211_find_ie(WLAN_EID_HT_OPERATION, ie, ielen);
+		if (tmp && tmp[1] >= sizeof(struct ieee80211_ht_operation)) {
+			struct ieee80211_ht_operation *htop = (void *)(tmp + 2);
+			channel_number = htop->primary_chan;
+		}
+	}
+    #endif
+	if (channel_number < 0)
+		return true;
+
+	*ie_ds_freq = ieee80211_channel_to_frequency(channel_number, channel->band);
+    if (channel->center_freq != *ie_ds_freq)
+    {
+        //SSV_LOG_DBG("ssvcheck: freq=%d,%d, %pM\n", *ie_ds_freq, channel->center_freq, mgmt->bssid);
+        return false;
+    }
+
+    #if 0
+    if (1)
+    {
+	    const u8 *ssidie = cfg80211_find_ie(WLAN_EID_SSID, ie, ielen);
+        if (ssidie)
+        {
+            char ssid[64] = {0};
+            memcpy(ssid, ssidie+2, ssidie[1]);
+            SSV_LOG_DBG("ssvcheck: freq=%d,%d, %pM, ssid=%s\n", *ie_ds_freq, channel->center_freq, mgmt->bssid, ssid);
+        }
+    }
+    #endif
+    
+    return true;
+}
+
 static inline int ssv_rx_scanu_result_ind(struct ssv_softc *sc,
                                            struct ssv_cmd *cmd,
                                            struct ipc_e2a_msg *msg)
@@ -552,20 +608,74 @@ static inline int ssv_rx_scanu_result_ind(struct ssv_softc *sc,
     struct cfg80211_bss *bss = NULL;
     struct ieee80211_channel *chan;
     struct scanu_result_ind *ind = (struct scanu_result_ind *)msg->param;
+    struct ssv_vif *vif = NULL;
+    struct ssv_vif *tmp_vif = NULL;
+   	u32 ie_ds_freq = 0;
 
-    chan = ieee80211_get_channel(sc->wiphy, ind->center_freq);
-
+	chan = ieee80211_get_channel(sc->wiphy, ind->center_freq);
     if (chan != NULL)
+    {
+        // Look for VIF entry
+        list_for_each_entry(tmp_vif, &sc->vifs, list) {
+            if (tmp_vif->up) {
+                if (NL80211_IFTYPE_STATION == SSV_VIF_TYPE(tmp_vif)) {
+                	vif = tmp_vif;
+					break;
+                }
+            }
+        }
+        
+    	if ((NULL != vif) &&(int)SSV_DRV_STATUS_CONNECTING == (int)atomic_read(&vif->drv_conn_state)) 
+		{
+			if (!ssv_check_beacon_channel(sc, (struct ieee80211_mgmt *)ind->payload, ind->length, chan, &ie_ds_freq))
+		    {
+				chan = ieee80211_get_channel(sc->wiphy, ie_ds_freq);
+			}
+		} else {
+			if (!ssv_check_beacon_channel(sc, (struct ieee80211_mgmt *)ind->payload, ind->length, chan, &ie_ds_freq))
+        	{
+            	return 0;
+        	}
+       	}
+
+        // Look for VIF entry
+        if ((NULL != vif) && (NULL != vif->sta.ap)) 
+		{
+        	if (!memcmp(vif->sta.ap->mac_addr, ((struct ieee80211_mgmt *)ind->payload)->bssid, ETH_ALEN))
+          	{
+            	ind->rssi = sc->rssiaccu / RSSI_MAX;
+            }
+     	}
+        
+
+    #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0))
+        bss = cfg80211_get_bss(sc->wiphy, NULL, ((struct ieee80211_mgmt *)ind->payload)->bssid, 
+                    NULL, 0, IEEE80211_BSS_TYPE_ANY, IEEE80211_PRIVACY_ANY);
+    #else
+        bss = cfg80211_get_bss(sc->wiphy, NULL, ((struct ieee80211_mgmt *)ind->payload)->bssid, 
+                    NULL, 0, 0, 0);
+    #endif
+        if (bss) {
+            cfg80211_unlink_bss(sc->wiphy, bss);
+        #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
+            cfg80211_put_bss(sc->wiphy, bss);
+        #else
+            cfg80211_put_bss(bss);
+        #endif
+        }
+    
         bss = cfg80211_inform_bss_frame(sc->wiphy, chan,
                                         (struct ieee80211_mgmt *)ind->payload,
                                         ind->length, ind->rssi * 100, GFP_ATOMIC);
-
-    if (bss != NULL)
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
-        cfg80211_put_bss(sc->wiphy, bss);
-#else
-        cfg80211_put_bss(bss);
-#endif
+    
+        if (bss != NULL) {
+    #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
+            cfg80211_put_bss(sc->wiphy, bss);
+    #else
+            cfg80211_put_bss(bss);
+    #endif
+        }
+    }
 
     return 0;
 }
@@ -614,9 +724,21 @@ static inline int ssv_rx_sm_connect_ind(struct ssv_softc *sc,
 {
     struct sm_connect_ind *ind = (struct sm_connect_ind *)msg->param;
     struct ssv_vif *ssv_vif = sc->vif_table[ind->vif_idx];
-    struct net_device *dev = ssv_vif->ndev;
+    struct net_device *dev = NULL;
     const u8 *req_ie, *rsp_ie;
 
+    if (ssv_vif == NULL)
+    {
+        SSV_LOG_DBG("[%s][%d] ssv_vif is NULL !!!!!\n", __FUNCTION__, __LINE__);          
+        return 0;
+    }
+
+    dev = ssv_vif->ndev;
+    if (dev == NULL)
+    {
+        SSV_LOG_DBG("[%s][%d] dev is NULL !!!!!\n", __FUNCTION__, __LINE__);           
+        return 0;
+    }
     #ifdef CONFIG_SSV_CHANNEL_FOLLOW
         u16 freq = -1;
         enum nl80211_channel_type ch_type = NL80211_CHAN_NO_HT;
@@ -645,39 +767,9 @@ static inline int ssv_rx_sm_connect_ind(struct ssv_softc *sc,
     SSV_LOG_DBG("[%s][%d] status = %u\n", __FUNCTION__, __LINE__, ind->status_code);
     SSV_LOG_DBG("[%s][%d] ind->ap_idx = %u\n", __FUNCTION__, __LINE__, ind->ap_idx);
 
-
-    if(ssv_cfg.sta_max_reconnect_times)
-    {
-        //Retry_Connection doesn't support WPA3
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
-        if(sc->sta_reconnect_info.auth_type != NL80211_AUTHTYPE_SAE)
-#else
-        //3.4 NL80211_AUTHTYPE_SAE no define ,need define NL80211_AUTHTYPE_SAE = NL80211_AUTHTYPE_NETWORK_EAP + 1
-        if(sc->sta_reconnect_info.auth_type != (NL80211_AUTHTYPE_NETWORK_EAP + 1 ))
-#endif
-        {
-            /*If connection failed, retry again */
-            if(ind->status_code && 
-                ( sc->sta_reconnect_info.retry_times < ssv_cfg.sta_max_reconnect_times))
-            {
-                sc->sta_reconnect_info.connect_retry = true;
-                sc->sta_reconnect_info.retry_times++;
-                SSV_LOG_DBG("Connection retry_times %d\n", sc->sta_reconnect_info.retry_times);
-            }else{
-                sc->sta_reconnect_info.connect_retry = false;
-                sc->sta_reconnect_info.retry_times = 0;
-            }
-            up(&sc->reconnect_sem);
-
-            if(sc->sta_reconnect_info.connect_retry)
-                return 0;
-        }
-    }
-
     /* Retrieve IE addresses and lengths */
     req_ie = (const u8 *)ind->assoc_ie_buf;
     rsp_ie = req_ie + ind->assoc_req_ie_len;
-
 
     // Fill-in the AP information
     if (ind->status_code == 0)
@@ -732,6 +824,11 @@ static inline int ssv_rx_sm_connect_ind(struct ssv_softc *sc,
     if (!ind->roamed)
     {
         SSV_LOG_DBG("[%s][%d] ind->status_code = %u\n", __FUNCTION__, __LINE__, ind->status_code);
+        if (dev == NULL)
+        {
+            SSV_LOG_DBG("[%s][%d] dev is NULL !!!!!\n", __FUNCTION__, __LINE__);          
+            return 0;
+        }
         cfg80211_connect_result(dev, (const u8 *)ind->bssid.array, req_ie,
                                 ind->assoc_req_ie_len, rsp_ie,
                                 ind->assoc_rsp_ie_len, ind->status_code,
@@ -742,8 +839,10 @@ static inline int ssv_rx_sm_connect_ind(struct ssv_softc *sc,
     {
         netif_tx_start_all_queues(dev);
         netif_carrier_on(dev);
+        atomic_set(&ssv_vif->drv_conn_state, (int)SSV_DRV_STATUS_CONNECTED);
+    } else {
+        atomic_set(&ssv_vif->drv_conn_state, (int)SSV_DRV_STATUS_DISCONNECTED);
     }
-
     return 0;
 }
 
@@ -754,13 +853,25 @@ static inline int ssv_rx_sm_disconnect_ind(struct ssv_softc *sc,
 #define SSV_RC_BEACON_MISS     5000
     struct sm_disconnect_ind *ind = (struct sm_disconnect_ind *)msg->param;
     struct ssv_vif *ssv_vif = sc->vif_table[ind->vif_idx];
-    struct net_device *dev = ssv_vif->ndev;
+    struct net_device *dev = NULL;
     int j = 0;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0)
     bool bConned = true;
 #endif
     struct cfg80211_bss *bss;
+ 
+    if (ssv_vif == NULL)
+    {
+        SSV_LOG_DBG("[%s][%d] ssv_vif is NULL !!!!!\n", __FUNCTION__, __LINE__);          
+        return 0;
+    }
 
+    dev = ssv_vif->ndev;
+    if (dev == NULL)
+    {
+        SSV_LOG_DBG("[%s][%d] dev is NULL !!!!!\n", __FUNCTION__, __LINE__);           
+        return 0;
+    }
     /* if vif is not up, ssv_close has already been called */
     if (ssv_vif->up) {
         netif_tx_stop_all_queues(dev);
@@ -800,6 +911,9 @@ static inline int ssv_rx_sm_disconnect_ind(struct ssv_softc *sc,
     for(j = 0; j < TID_MAX ; j++){
         ssv_vif->sta.ap->rx_last_seqcntl[j] = 0xFFFF;
     }
+    for(j = 0; j < TID_NOQOS_KEY_IDX_MAX ; j++){
+        ssv_vif->sta.ap->rx_last_seqcntl_noqos[j] = 0xFFFF;
+    }
     ssv_vif->sta.ap->port_control=true;
     // memset(&ssv_vif->sta.ap->mac_addr[0], 0, ETH_ALEN);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0)
@@ -825,6 +939,8 @@ static inline int ssv_rx_sm_disconnect_ind(struct ssv_softc *sc,
 #endif
         }
     }
+    
+    atomic_set(&ssv_vif->drv_conn_state, (int)SSV_DRV_STATUS_DISCONNECTED);
     return 0;
 }
 

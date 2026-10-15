@@ -36,6 +36,11 @@ struct sk_buff *ssv_rx_skb_alloc(unsigned int frame_len, gfp_t flags)
     }
 #else
     skb = __dev_alloc_skb(size, flags);
+    if (skb == NULL)
+    {
+        SSV_LOG_DBG("@@@ssv debug for alloc failed !!\r\n");
+        return NULL;
+    }
     skb->cb[0] = 0x0;
 #endif
 

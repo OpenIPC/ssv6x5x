@@ -840,7 +840,7 @@ static int ssv6xxx_sdio_force_load_fw_fromeheader(struct device *child)
     ssv6xxx_sdio_write_reg(child, 0x08c00014, 0xff010100);
 	//turn-on necessary memories
     ssv6xxx_sdio_write_reg(child, 0x08d02050, 0xcfc3);
-    mdelay(500);
+    mdelay(50);
 
     //load fw before platform initialize
 	//power on all sram
@@ -871,7 +871,7 @@ static int ssv6xxx_sdio_force_load_fw_fromeheader(struct device *child)
     ssv6xxx_sdio_write_reg(child, 0x08c00860, 0x31);
     ssv6xxx_sdio_write_reg(child, 0x80000, 0xd500d5);
 #endif
-    mdelay(500); //Wait 500ms for firmware ready.
+    mdelay(400); //Wait 400ms for firmware ready and rf calibration done
 #endif
 
     return ret;
@@ -929,7 +929,16 @@ static int ssv6xxx_sdio_load_each_fw(struct device *child)
     ssv6xxx_sdio_write_reg(child, 0x08c00860, 0x31);
     ssv6xxx_sdio_write_reg(child, 0x80000, 0xd500d5);
 #endif
-    mdelay(500); //Wait 500ms for firmware ready.
+    //Please check the WIFISW-3412 to get the deatil information 
+    if((ssv_cfg.firmware_choice==2)||
+            (0==strcmp(ssv_cfg.firmware_name,"ssv6x5x-sw_2.bin"))){
+        mdelay(400); 
+    }else if((0==strcmp(ssv_cfg.firmware_name,"ssv6x5x-sw_ble.bin"))||
+                (0==strcmp(ssv_cfg.firmware_name,"ssv6x5x-sw_nimble.bin"))){
+        mdelay(170);
+    }else{
+        mdelay(50);
+    }
 #endif
 
     return ret;
@@ -1615,16 +1624,19 @@ static void ssv6xxx_sdio_rx_task(struct device *child,
 			int (*is_rx_q_full)(void *args), void *args, u32 recv_cnt)
 {
 	struct ssv6xxx_sdio_glue *glue = dev_get_drvdata(child);
-
+    
 	glue->rx_cb = rx_cb;
 	glue->rx_cb_args = args;
 	glue->is_rx_q_full = is_rx_q_full;
     glue->recv_cnt = recv_cnt;
 
-    ssv6xxx_sdio_irq_setmask(glue->dev, 0xff);
-    ssv6xxx_sdio_irq_disable(glue->dev, false);
-
-    ssv6xxx_sdio_irq_request(glue->dev, ssv6xxx_sdio_isr, NULL);
+    if (rx_cb != NULL)
+    {
+        ssv6xxx_sdio_irq_setmask(glue->dev, 0xff);
+        ssv6xxx_sdio_irq_disable(glue->dev, false);
+        ssv6xxx_sdio_irq_request(glue->dev, ssv6xxx_sdio_isr, NULL);
+    }
+	SSV_LOG_DBG("%s(): \n", __FUNCTION__);
 }
 
 static void ssv6xxx_sdio_tx_req_cnt(struct device *dev, int *cnt)
@@ -2290,7 +2302,13 @@ static int ssv6xxx_sdio_probe(struct sdio_func *func,
 
     //add trigger
     ssv6xxx_sdio_irq_trigger(glue->dev);
-	
+
+    // turn off usb
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08d02070, 0x4);
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08d02074, 0x40004);
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08d02078, 0x0);
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08d02084, 0x8fc0);
+
     ret = ssv6xxx_platform_init(&func->dev, &sdio_ops, &plat_hw);
     if (ret) {
         SSV_LOG_DBG("Fail to platform init\n");
@@ -2313,6 +2331,42 @@ out:
     return ret;
 }
 
+static int ssv_sdio_do_device_exit(struct device *d)
+{
+    struct ssv6xxx_sdio_glue *glue = dev_get_drvdata(d);
+    
+#ifndef HWIF_DIS_FW_DOWNLOAD
+    //Jump to ROM before load firmware.
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08c00004, 0x80000); //ROM code address 0x80000
+    //Disable CPU, Support after r4p0
+    //Stall C0
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08c00014, 0xff010100);
+    mdelay(50);
+#endif
+
+    // turn off usb and wifi
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08d02070, 0x6);
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08d02074, 0x60006);
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08d02078, 0x0);
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08d02084, 0x8fc0);
+    
+    // turn off mac clock
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08c00000, 0x101);
+    
+    // turn off ble clock
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08c0004c, 0x0);
+    
+    // CPU/BUS clock
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08c00008, 0x303);
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08c00068, 0x7);
+    
+    // turn off uart0
+    ssv6xxx_sdio_write_reg(glue->dev, 0x08c00800, 0x0);
+
+    return 0;
+}
+        
+
 extern void ssv6xxx_platform_deinit(void *plat_hw);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,7,0)
 static void __devexit ssv6xxx_sdio_remove(struct sdio_func *func)
@@ -2327,6 +2381,7 @@ static void ssv6xxx_sdio_remove(struct sdio_func *func)
     {
         // step 1, netstack deinit
         ssv6xxx_platform_deinit(glue->plat_hw);
+        ssv_sdio_do_device_exit(glue->dev);
         
         // step 2, sdio driver deinit
         // Remove IRQ handler once card is removed.

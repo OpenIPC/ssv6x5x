@@ -202,7 +202,7 @@ struct ssv_agg_reodr_msg {
 #define MAC_SEQCTRL_NUM_MSK             0xFFF0
 #define MAC_SEQCTRL_NUM_MAX             (MAC_SEQCTRL_NUM_MSK >> MAC_SEQCTRL_NUM_OFT)
 
-#define RX_CNTRL_REORD_WIN_SIZE 16
+#define RX_CNTRL_REORD_WIN_SIZE 32  // must be the same with fw
 #define RX_HOST_REORD_PATTERN   0xFEFADECA
 
 /// Structure containing the information about RX reordering if host handle reordering 
@@ -212,7 +212,10 @@ struct host_reorder_info
     uint8_t     frame_info;
     uint8_t     sta_idx;
     uint8_t     tid;
-    uint8_t     baw_size;
+    union {
+        uint8_t     baw_size; //qos data 
+        uint8_t     key_idx; // no qos data
+    };
     uint64_t    pn;
     uint16_t    win_start;
     uint16_t    sn;
@@ -255,7 +258,8 @@ struct rxu_cntrl_reord
      * Lowest expected to be received (from 0 to 4096)
      *     = WinStartB IEEE Std 802.11-2012 section 9.21.7.6.1
      */
-    uint64_t pn;
+    uint64_t pn_noqos[TID_NOQOS_KEY_IDX_MAX];//no qos data key index
+    uint64_t pn;// qos data use
     uint16_t win_start;
     uint16_t first_win_start;
     uint16_t win_end;
@@ -265,8 +269,9 @@ struct rxu_cntrl_reord
     uint8_t ooo_pkt_cnt;
     /// TID of the reordering structure
     uint8_t tid;
+    uint8_t now_keyidx;
     /// Reordering buffer elements
-    struct rxu_cntrl_reord_elt elt[RX_CNTRL_REORD_WIN_SIZE];
+    struct rxu_cntrl_reord_elt *elt;
     /// Flag indicating if the reordering agreement is active or not
     bool active;
 

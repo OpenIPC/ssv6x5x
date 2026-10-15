@@ -274,7 +274,6 @@ struct ssv6xxx_cfg_cmd_table cfg_cmds[] = {
     { "thermal_wifi_gain_offset",   (void *)&ssv_cfg.thermal_wifi_gain_offset,      0,      __string2array5     , "-5,-2,0,1,2"},
     { "thermal_ble_gain_offset",    (void *)&ssv_cfg.thermal_ble_gain_offset,       0,      __string2array5     , "-3,-2,0,1,3"},
     { "thermal_boundary",    		(void *)&ssv_cfg.thermal_boundary,       		0,      __string2array4     , "0,0,0,0"},
-	{ "sta_max_reconnect_times",    (void *)&ssv_cfg.sta_max_reconnect_times,       0,      __string2u32        , "2"},
     { "ipc_tx_use_one_hwq",         (void *)&ssv_cfg.ipc_tx_use_one_hwq,            0,      __string2u32        , "3"},
     { "set_rts_method",             (void *)&ssv_cfg.set_rts_method,                0,      __string2u8         , "0"},
     { "ampdu_tx_lft",               (void *)&ssv_cfg.ampdu_tx_lft,                  0,      __string2u32        , "512"},
@@ -287,11 +286,21 @@ struct ssv6xxx_cfg_cmd_table cfg_cmds[] = {
     { "use_ep0_rw_reg",             (void *)&ssv_cfg.use_ep0_rw_reg,                0,      __string2bool       , "0"},
     { "channel_list_2p4g",          (void *)&ssv_cfg.channel_list_2p4g,             0,      __string2u32        , "0"},
     { "he_on",                      (void *)&ssv_cfg.he_on,                         0,      __string2bool       , "1"},
-    { "mac_low_mask",               (void *)&ssv_cfg.mac_low_mask,                  0,      __string2u32        , "0"},
-    { "mac_high_mask",              (void *)&ssv_cfg.mac_high_mask,                 0,      __string2u32        , "0x100"},
+    { "mac_low_mask",               (void *)&ssv_cfg.mac_low_mask,                  0,      __string2u32        , "0x2"},
+    { "mac_high_mask",              (void *)&ssv_cfg.mac_high_mask,                 0,      __string2u32        , "0"},
     { "ipc_tx_trigger_en",          (void *)&ssv_cfg.ipc_tx_trigger_en,             0,      __string2u8         , "0"},
     { "ipc_tx_wait_num",            (void *)&ssv_cfg.ipc_tx_wait_num,               0,      __string2u32        , "0"},
     { "ipc_tx_wait_timeout",        (void *)&ssv_cfg.ipc_tx_wait_timeout,           0,      __string2u32        , "0"},
+    { "switch_uart_pin",            (void *)&ssv_cfg.switch_uart_pin,               0,      __string2u32        , "0"},
+    { "dsss_pwr",                      (void *)&ssv_cfg.dsss_pwr,                   0,       __string2u32    , "0x0F"},
+    { "ofdm_pwr",                      (void *)&ssv_cfg.ofdm_pwr,                   0,       __string2u32    , "0x12"},
+    { "apply_high_power",           (void *)&ssv_cfg.apply_high_power,              0,       __string2u32    , "0x0"},
+    { "auth_timeout",               (void *)&ssv_cfg.auth_timeout,                  0,      __string2u32        , "200"},
+    { "asso_timeout",               (void *)&ssv_cfg.asso_timeout,                  0,      __string2u32        , "200"},
+    { "sta_detect_bcn_timeout",     (void *)&ssv_cfg.sta_detect_bcn_timeout,        0,      __string2u32        , "1000"},
+    { "data_rate_update_freq",      (void *)&ssv_cfg.data_rate_update_freq,         0,      __string2u32       , "1000"},
+    { "specific_ap",                (void *)&ssv_cfg.specific_ap,                   0,      __string2u32        , "1"},
+    { "txrate_force_sgi_off",       (void *)&ssv_cfg.txrate_force_sgi_off,          0,      __string2u8         , "0"},
     { NULL, NULL, 0, NULL, NULL},
 };
 
@@ -493,3 +502,5 @@ void ssv_device_exit(void)
 
 EXPORT_SYMBOL(ssv_device_init);
 EXPORT_SYMBOL(ssv_device_exit);
+
+

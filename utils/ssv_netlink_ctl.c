@@ -16,6 +16,7 @@
 #include "ssv_ctl_common.h"
 #include "ssv_netlink_ctl.h"
 #include "ble/nimble/nimble_msg.h"
+#include "ble/ble_hci/ble_hci_msg.h"
 #include <hwif/hwif.h>
 #include "ssv_debug.h"
 
@@ -24,6 +25,8 @@ static int wifi_ctl_operation_cmd(struct sk_buff *skb, struct genl_info *info);
 static int ssv_ctl_ssv_nimble_enable(struct sk_buff *skb, struct genl_info *info);
 static int ssv_ctl_ssv_nimble_disable(struct sk_buff *skb, struct genl_info *info);
 static int ssv_ctl_to_ssv_nimble(struct sk_buff *skb, struct genl_info *info);
+static int ssv_ctl_to_ble_drv(struct sk_buff *skb, struct genl_info *info);
+static int ssv_ctl_to_ssv_ble_ll(struct sk_buff *skb, struct genl_info *info);
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 static struct nla_policy ssv_ctl_genl_policy[E_SSV_CTL_ATTR_MAX + 1] = {
@@ -34,6 +37,9 @@ static struct nla_policy ssv_ctl_genl_policy[E_SSV_CTL_ATTR_MAX + 1] = {
     [E_SSV_CTL_ATTR_SSV_NIMBLE_DISABLE]   = { .type = NLA_U32 },
     [E_SSV_CTL_ATTR_TO_SSV_NIMBLE]        = { .type = NLA_BINARY, .len = 2304 },
     [E_SSV_CTL_ATTR_FROM_SSV_NIMBLE]      = { .type = NLA_BINARY, .len = 2304 },
+    [E_SSV_CTL_ATTR_TO_SSV_BLE_DRV]       = { .type = NLA_BINARY, .len = 512 },
+    [E_SSV_CTL_ATTR_TO_SSV_BLE_LL]        = { .type = NLA_BINARY, .len = 2304 },
+    [E_SSV_CTL_ATTR_FROM_SSV_BLE_LL]      = { .type = NLA_BINARY, .len = 2304 },
 };
 #endif
 
@@ -73,6 +79,24 @@ struct genl_ops ssv_ctl_gnl_ops[] = {
         .policy = ssv_ctl_genl_policy,
 #endif
         .doit = ssv_ctl_to_ssv_nimble,
+        .dumpit = NULL,
+    },
+    {
+        .cmd = E_SSV_CTL_CMD_TO_SSV_BLE_DRV,
+        .flags = 0,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
+        .policy = ssv_ctl_genl_policy,
+#endif
+        .doit = ssv_ctl_to_ble_drv,
+        .dumpit = NULL,
+    },
+    {
+        .cmd = E_SSV_CTL_CMD_TO_SSV_BLE_LL,
+        .flags = 0,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
+        .policy = ssv_ctl_genl_policy,
+#endif
+        .doit = ssv_ctl_to_ssv_ble_ll,
         .dumpit = NULL,
     },
 };
@@ -376,6 +400,143 @@ free_msg:
     return retval;
 }
 EXPORT_SYMBOL(ssv_ctl_from_ssv_nimble);
+
+static u32 ssv_ble_usr_pid = 0;
+static u8 ssv_ble_enable = 0;
+static int ssv_ctl_to_ble_drv(struct sk_buff *skb, struct genl_info *info)
+{
+    ST_BLE_DRV_CMD *cmd = NULL;
+
+    if (info == NULL)
+        return -EINVAL;
+
+    if (!info->attrs[E_SSV_CTL_ATTR_TO_SSV_BLE_DRV])
+        return -EINVAL;
+    else
+    {
+        cmd = (ST_BLE_DRV_CMD *)nla_data(info->attrs[E_SSV_CTL_ATTR_TO_SSV_BLE_DRV]);
+    }
+
+#if defined(CONFIG_BLE) && defined(BLE_USE_LL_ONLY)
+    switch(cmd->cmdid)
+    {
+        case E_SSV_BLE_DRV_CMD_NETLINK_ENABLE:
+        {
+        #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+            ssv_ble_usr_pid = info->snd_portid;
+        #else
+            ssv_ble_usr_pid = info->snd_pid;
+        #endif
+            ssv_ble_enable = 1;
+            SSV_LOG_DBG("\33[31m%s(): ble enable, pid=%d\33[0m\r\n",__FUNCTION__ ,ssv_ble_usr_pid);
+            break;
+        }
+        case E_SSV_BLE_DRV_CMD_NETLINK_DISABLE:
+        {
+        #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+            ssv_ble_usr_pid = 0;
+        #else
+            ssv_ble_usr_pid = 0;
+        #endif
+            ssv_ble_enable = 0;
+            SSV_LOG_DBG("\33[31m%s(): ble disable\33[0m\r\n",__FUNCTION__);
+            break;
+        }
+        case E_SSV_BLE_DRV_CMD_INIT:
+        {
+            SSV_LOG_DBG("\33[31m%s(): ble init\33[0m\r\n",__FUNCTION__);
+            ssv_ble_hci_send_bleinit(g_ssv_hw->sbsc, 0);
+            break;
+        }
+        case E_SSV_BLE_DRV_CMD_SET_SCAN_SWLIST:
+        {
+            ssv_ble_hci_send_scan_iwlist(g_ssv_hw->sbsc, cmd->data);
+            break;
+        }
+        case E_SSV_BLE_DRV_CMD_DEINIT:
+        {
+            SSV_LOG_DBG("\33[31m%s(): ble deinit\33[0m\r\n",__FUNCTION__);
+            ssv_ble_hci_send_bleinit(g_ssv_hw->sbsc, 1);
+            break;
+        }
+        default:
+        {
+            SSV_LOG_ERR("\33[31m%s(): unknown id(%u)\33[0m\r\n",__FUNCTION__, cmd->cmdid);
+            break;
+        }
+    }
+#endif
+
+    return 0;
+}
+
+static int ssv_ctl_to_ssv_ble_ll(struct sk_buff *skb, struct genl_info *info)
+{
+    int retval = 0;
+    u8 *inval;
+	int strlen;
+
+    if (info == NULL)
+        return -EINVAL;
+
+    if (!info->attrs[E_SSV_CTL_ATTR_TO_SSV_BLE_LL])
+        return -EINVAL;
+    else
+    {
+        strlen = nla_len(info->attrs[E_SSV_CTL_ATTR_TO_SSV_BLE_LL]);
+        inval = (char *)nla_data(info->attrs[E_SSV_CTL_ATTR_TO_SSV_BLE_LL]);
+    }
+
+    mutex_lock(&g_ssv_hw->mutex);
+#if defined(CONFIG_BLE) && defined(BLE_USE_LL_ONLY)
+    ssv_ble_hci_send_packet(g_ssv_hw->sbsc, (char *)inval, (u16)strlen);
+#endif
+    mutex_unlock(&g_ssv_hw->mutex);
+
+    return retval;
+}
+
+int ssv_ctl_from_ssv_ble_ll(char *pData, int len)
+{
+    struct sk_buff *skb;
+    int retval;
+    void *msg_head;
+    unsigned char *pOutBuf=pData;
+    int inBufLen=len;
+
+    if((0==ssv_ble_usr_pid)||(0==ssv_ble_enable))
+    {
+        return -1;
+    }
+    /* allocate new netlink packet */
+    skb = genlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+    if (skb == NULL)
+        return -ENOMEM;
+
+    /* create the message headers */
+    msg_head = genlmsg_put(skb, 0, 0, &ssv_ctl_gnl_family, 0, E_SSV_CTL_CMD_FROM_SSV_BLE_LL);
+    if (msg_head == NULL)
+    {
+        retval = -ENOMEM;
+        SSV_LOG_DBG("Fail to create the netlink message header\n");
+        goto free_msg;
+    }
+    /* fill with message */
+    retval = nla_put(skb, E_SSV_CTL_ATTR_FROM_SSV_BLE_LL, inBufLen, pOutBuf);
+    if (retval != 0)
+    {
+        SSV_LOG_DBG("Fail to add attribute in message\n");
+        goto free_msg;
+    }
+    /* finalize the message */
+    genlmsg_end(skb, msg_head);
+    return genlmsg_unicast(&init_net, skb, ssv_ble_usr_pid);
+
+free_msg:
+    nlmsg_free(skb);
+    return retval;
+}
+EXPORT_SYMBOL(ssv_ctl_from_ssv_ble_ll);
 
 int ssv_ctl_init(void)
 {

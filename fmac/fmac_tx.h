@@ -186,7 +186,7 @@ u16 ssv_select_queue(struct net_device *dev, struct sk_buff *skb
 #endif
 );
 void ssv_tx_flow_control(struct ssv_softc *sc, bool fc_en);
-int ssv_start_xmit(struct sk_buff *skb, struct net_device *dev);
+netdev_tx_t ssv_start_xmit(struct sk_buff *skb, struct net_device *dev);
 int ssv_requeue_multicast_skb(struct sk_buff *skb, struct ssv_vif *ssv_vif);
 void ssv_probe_client(struct ssv_softc *sc);
 #ifdef SEND_KEEP_ALIVE

@@ -54,6 +54,10 @@ ccflags-$(CONFIG_BLE) += -DCONFIG_BLE
 # CONFIG_BLE_HCI_OVER_HWIF:1  USB or SDIO, base on HWIF
 ccflags-y += -DCONFIG_BLE_HCI_BUS=1
 
+## BLE: application handles HCI data itself (needs CONFIG_BLE and CONFIG_BLE_HCI_OVER_HWIF)
+CONFIG_BLE_USE_LL_ONLY ?= n
+ccflags-$(CONFIG_BLE_USE_LL_ONLY) += -DBLE_USE_LL_ONLY
+
 ## wpa_supplicant接口使用
 CONFIG_WPA_SUPPLICANT_CTL ?= y
 ccflags-$(CONFIG_WPA_SUPPLICANT_CTL) += -DCONFIG_WPA_SUPPLICANT_CTL

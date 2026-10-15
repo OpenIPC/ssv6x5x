@@ -206,9 +206,38 @@ void ssv_ble_hci_send_bleinit(struct ssv_ble_softc *sbsc, u8 reset_only)
     kfree(msg);
 }
 
+void ssv_ble_hci_send_scan_iwlist(struct ssv_ble_softc *sbsc, u8 *data)
+{
+
+    ST_IPC_PRIV_MSG *msg = NULL;
+    u32 msg_total_len = 0;
+    
+    msg_total_len = (u32)(sizeof(ST_IPC_PRIV_MSG) + sizeof(ST_SSV_SET_SCAN_SWLIST));
+    msg = kzalloc(msg_total_len+1, GFP_KERNEL);
+
+    if (!msg) {
+        SSV_LOG_DBG("%s(): Fail to alloc cmd buffer.\n", __FUNCTION__);
+        return; 
+    }
+    
+    // set msg id
+    msg->msgid = E_IPC_PRIV_MSG_TYPE_BLE_SCAN_IWLIST;
+    msg->msglen = sizeof(ST_SSV_SET_SCAN_SWLIST);
+
+    memcpy(&msg->data[0], data, sizeof(ST_SSV_SET_SCAN_SWLIST));
+
+    if (0 > ssv_ble_hci_private_msg_to_hci(sbsc, (u8*)msg, msg_total_len)) {
+        SSV_LOG_DBG("Fail to send private command\n");
+    }
+
+    kfree(msg);
+}
+
 int ssv_ble_hci_event(void *app_param, struct sk_buff *skb)
 {
+#ifndef BLE_USE_LL_ONLY
     struct ssv_ble_softc *sbsc = (struct ssv_ble_softc *)app_param;
+#endif
 
     struct rx_info *rx_info = NULL;
     u32 *rx_desc = (u32 *)&skb->data[0];
@@ -228,8 +257,13 @@ int ssv_ble_hci_event(void *app_param, struct sk_buff *skb)
         {
             case E_IPC_PRIV_MSG_TYPE_BLE_EVT:
             {
+#ifdef BLE_USE_LL_ONLY
+                extern int ssv_ctl_from_ssv_ble_ll(char *pData, int len);
+                ssv_ctl_from_ssv_ble_ll((char *)msg->data, (int)msg->msglen);
+#else
                 extern int ssv_ble_hci_recv_packet(struct ssv_ble_softc *sbsc, u8 *rx_packet, u32 rx_len);
                 ssv_ble_hci_recv_packet(sbsc, (u8 *)msg->data, msg->msglen);
+#endif
                 dev_kfree_skb_any(skb);
                 return 0;
             }

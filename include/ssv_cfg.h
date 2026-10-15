@@ -62,7 +62,6 @@ struct ssv6xxx_cfg {
     bool    cca;
     bool    greentx_en;
     u32     disable_fw_thermal;
-    u32     sta_max_reconnect_times;
 #ifdef SSV_MODULE_TEST
     // module test
     u32     mod_test_mask;
@@ -128,6 +127,31 @@ struct ssv6xxx_cfg {
     u32  ipc_tx_wait_num;
     u32  ipc_tx_wait_timeout;
     u8   ipc_tx_trigger_en;
+
+    //switch uart pin
+    u32 switch_uart_pin;
+
+    // for tx power
+    u32 dsss_pwr;
+    u32 ofdm_pwr;
+
+    //high power
+    u32 apply_high_power;
+    
+    // extend connect timeout (unit: ms) 
+    u32  auth_timeout;
+    u32  asso_timeout;
+    // sta detect bcn timeout (unit: ms) 
+    u32 sta_detect_bcn_timeout;
+
+    // update data rate frequency
+    u32 data_rate_update_freq;
+
+	//specific ap 
+    u32  specific_ap;
+
+    //force txrate sgi off
+    u8 txrate_force_sgi_off;
 };
 
 #endif /* _SSV_CFG_H_ */
