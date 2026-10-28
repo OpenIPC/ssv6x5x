@@ -30,7 +30,9 @@
 
 //include firmware binary header
 #include <include/ssv6x5x-sw.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,13,0)
 MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif
 static void ssv6xxx_cmd_rc(struct ssv_hw *sh, int argc, char *argv[])
 {
     struct ssv_softc *sc = sh->sc;

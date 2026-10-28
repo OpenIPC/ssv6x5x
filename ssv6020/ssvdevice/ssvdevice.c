@@ -54,7 +54,9 @@
 MODULE_AUTHOR("iComm-semi, Ltd");
 MODULE_DESCRIPTION("Shared library for SSV wireless LAN cards.");
 MODULE_LICENSE("Dual BSD/GPL");
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,13,0)
 MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif
 char *stacfgpath = NULL;
 EXPORT_SYMBOL(stacfgpath);
 module_param(stacfgpath, charp, 0000);

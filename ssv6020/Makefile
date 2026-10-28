@@ -8,7 +8,8 @@ ifeq ($(SSV_DRV_PATH),)
 SSV_DRV_PATH := $(PWD)
 endif
 
-KBUILD_TOP := $(srctree)/$(src)
+# $(src) is absolute for an external module on older kernels (3.10)
+KBUILD_TOP := $(if $(filter /%,$(src)),$(src),$(srctree)/$(src))
 ifeq ($(MAKELEVEL),0)
 KBUILD_TOP := .
 endif

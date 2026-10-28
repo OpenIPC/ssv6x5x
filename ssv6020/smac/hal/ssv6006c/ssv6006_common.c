@@ -32,7 +32,9 @@
 #include <smac/ssv_skb.h>
 #include <hci/hctrl.h>
 #include <ssvdevice/ssv_cmd.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,13,0)
 MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif
 static struct ssv_hw * ssv6006_alloc_hw (void)
 {
     struct ssv_hw *sh;
