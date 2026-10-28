@@ -527,7 +527,7 @@ EXPORT_SYMBOL(ssv_ctl_nl_send_msg);
 struct genl_ops ssv_ctl_gnl_ops[] = {
     {
         .cmd = SSV_CTL_CMD_SMARTLINK,
-        .flags = 0,
+        .flags = GENL_ADMIN_PERM,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0)
         .policy = ssv_ctl_genl_policy,
 #endif
@@ -536,7 +536,7 @@ struct genl_ops ssv_ctl_gnl_ops[] = {
     },
     {
         .cmd = SSV_CTL_CMD_SET_CHANNEL,
-        .flags = 0,
+        .flags = GENL_ADMIN_PERM,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0)
         .policy = ssv_ctl_genl_policy,
 #endif
@@ -545,7 +545,7 @@ struct genl_ops ssv_ctl_gnl_ops[] = {
     },
     {
         .cmd = SSV_CTL_CMD_GET_CHANNEL,
-        .flags = 0,
+        .flags = GENL_ADMIN_PERM,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0)
         .policy = ssv_ctl_genl_policy,
 #endif
@@ -554,7 +554,7 @@ struct genl_ops ssv_ctl_gnl_ops[] = {
     },
     {
         .cmd = SSV_CTL_CMD_SET_PROMISC,
-        .flags = 0,
+        .flags = GENL_ADMIN_PERM,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0)
         .policy = ssv_ctl_genl_policy,
 #endif
@@ -563,7 +563,7 @@ struct genl_ops ssv_ctl_gnl_ops[] = {
     },
     {
         .cmd = SSV_CTL_CMD_GET_PROMISC,
-        .flags = 0,
+        .flags = GENL_ADMIN_PERM,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0)
         .policy = ssv_ctl_genl_policy,
 #endif
@@ -573,7 +573,7 @@ struct genl_ops ssv_ctl_gnl_ops[] = {
 #ifdef CONFIG_SSV_SMARTLINK
     {
         .cmd = SSV_CTL_CMD_SMARTICOMM,
-        .flags = 0,
+        .flags = GENL_ADMIN_PERM,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0)
         .policy = ssv_ctl_genl_policy,
 #endif
@@ -582,7 +582,7 @@ struct genl_ops ssv_ctl_gnl_ops[] = {
     },
     {
         .cmd = SSV_CTL_CMD_SET_SI_CMD,
-        .flags = 0,
+        .flags = GENL_ADMIN_PERM,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0)
         .policy = ssv_ctl_genl_policy,
 #endif
@@ -591,7 +591,7 @@ struct genl_ops ssv_ctl_gnl_ops[] = {
     },
     {
         .cmd = SSV_CTL_CMD_GET_SI_STATUS,
-        .flags = 0,
+        .flags = GENL_ADMIN_PERM,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0)
         .policy = ssv_ctl_genl_policy,
 #endif
@@ -600,7 +600,7 @@ struct genl_ops ssv_ctl_gnl_ops[] = {
     },
     {
         .cmd = SSV_CTL_CMD_GET_SI_SSID,
-        .flags = 0,
+        .flags = GENL_ADMIN_PERM,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0)
         .policy = ssv_ctl_genl_policy,
 #endif
@@ -609,7 +609,7 @@ struct genl_ops ssv_ctl_gnl_ops[] = {
     },
     {
         .cmd = SSV_CTL_CMD_GET_SI_PASS,
-        .flags = 0,
+        .flags = GENL_ADMIN_PERM,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0)
         .policy = ssv_ctl_genl_policy,
 #endif
@@ -619,7 +619,7 @@ struct genl_ops ssv_ctl_gnl_ops[] = {
 #endif
     {
         .cmd = SSV_CTL_CMD_SEND_RAWDATA,
-        .flags = 0,
+        .flags = GENL_ADMIN_PERM,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0)
         .policy = ssv_ctl_genl_policy,
 #endif

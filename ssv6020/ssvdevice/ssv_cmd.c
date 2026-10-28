@@ -109,6 +109,10 @@ static int ssv_cmd_reg(struct ssv_softc *sc, int argc, char *argv[])
         addr = simple_strtoul(argv[2], &endp, 16);
         value = simple_strtoul(argv[3], &endp, 16);
         count = simple_strtoul(argv[4], &endp, 16); //amount of access register
+        if (count == 0 || count > ARRAY_SIZE(addr_list)) {
+            snprintf_res(cmd_data, "word_count must be 1..%zu\n", ARRAY_SIZE(addr_list));
+            return 0;
+        }
 
         //write same value to sequential registers
         for (s=0; s<count; s++) {
@@ -130,6 +134,10 @@ static int ssv_cmd_reg(struct ssv_softc *sc, int argc, char *argv[])
         u32 addr_list[8],value_list[8];
         addr = simple_strtoul(argv[2], &endp, 16);
         count = simple_strtoul(argv[3], &endp, 16);
+        if (count == 0 || count > ARRAY_SIZE(addr_list)) {
+            snprintf_res(cmd_data, "word_count must be 1..%zu\n", ARRAY_SIZE(addr_list));
+            return 0;
+        }
 
         //read from seqential registers
         for (s=0; s<count; s++)
@@ -236,7 +244,8 @@ static int __string2str(u8 *path, void *val, u32 arg)
 {
     u8 *temp=(u8 *)val;
 
-    sprintf(temp,"%s",path);
+    /* arg is the size of the field val points at */
+    strlcpy(temp, path, arg);
 
     return 0;
 }
@@ -290,10 +299,10 @@ struct ssv6xxx_cfg_cmd_table cfg_cmds[] = {
     { "hw_cap_report_tx_ack", (void *)&ssv_cfg.hw_caps,               19,  __string2flag32  , "off"},
     { "xtal_clock",           (void *)&ssv_cfg.crystal_type,           0,  __string2u32     , "24"},
     { "volt_regulator",       (void *)&ssv_cfg.volt_regulator,         0,  __string2u32     , "1"},
-    { "firmware_path",        (void *)&ssv_cfg.firmware_path[0],       0,  __string2str     , NULL},
-    { "flash_bin_path",       (void *)&ssv_cfg.flash_bin_path[0],      0,  __string2str     , NULL},
-    { "mac_address_path",     (void *)&ssv_cfg.mac_address_path[0],    0,  __string2str     , NULL},
-    { "mac_output_path",      (void *)&ssv_cfg.mac_output_path[0],     0,  __string2str     , NULL},
+    { "firmware_path",        (void *)&ssv_cfg.firmware_path[0],       sizeof(ssv_cfg.firmware_path),  __string2str     , NULL},
+    { "flash_bin_path",       (void *)&ssv_cfg.flash_bin_path[0],      sizeof(ssv_cfg.flash_bin_path),  __string2str     , NULL},
+    { "mac_address_path",     (void *)&ssv_cfg.mac_address_path[0],    sizeof(ssv_cfg.mac_address_path),  __string2str     , NULL},
+    { "mac_output_path",      (void *)&ssv_cfg.mac_output_path[0],     sizeof(ssv_cfg.mac_output_path),  __string2str     , NULL},
     { "ignore_efuse_mac",     (void *)&ssv_cfg.ignore_efuse_mac,       0,  __string2u32     , NULL},
     { "efuse_rate_gain_mask", (void *)&ssv_cfg.efuse_rate_gain_mask,   0,  __string2u32     , "0xF"},
     { "mac_address_mode",     (void *)&ssv_cfg.mac_address_mode,       0,  __string2u32     , NULL},
@@ -301,7 +310,7 @@ struct ssv6xxx_cfg_cmd_table cfg_cmds[] = {
     { "beacon_rssi_minimal",  (void *)&ssv_cfg.beacon_rssi_minimal,    0,  __string2u32     , NULL},
 
     { "force_chip_identity",  (void *)&ssv_cfg.force_chip_identity,    0,  __string2u32     , NULL},
-    { "external_firmware_name", (void *)&ssv_cfg.external_firmware_name[0], 0,  __string2str, NULL},
+    { "external_firmware_name", (void *)&ssv_cfg.external_firmware_name[0], sizeof(ssv_cfg.external_firmware_name),  __string2str, NULL},
 
     { "ignore_firmware_version",  (void *)&ssv_cfg.ignore_firmware_version, 0,  __string2u32, NULL},
     { "use_sw_cipher",        (void *)&ssv_cfg.use_sw_cipher,          0,  __string2u32,      NULL},
@@ -342,7 +351,7 @@ struct ssv6xxx_cfg_cmd_table cfg_cmds[] = {
     { "flowctl_low_threshold",(void *)&ssv_cfg.flowctl_low_threshold,  0,  __string2u32     , "96"},
     { "flowctl_high_threshold",(void *)&ssv_cfg.flowctl_high_threshold,0,  __string2u32     , "128"},
     { "disable_dpd",          (void *)&ssv_cfg.disable_dpd,            0,  __string2u32     , "0"},
-    { "ctry",                 (void *)&ssv_cfg.ctry,                   0,  __string2str     , NULL},
+    { "ctry",                 (void *)&ssv_cfg.ctry,                   sizeof(ssv_cfg.ctry),  __string2str     , NULL},
 	{ "rx_ip_align",          (void *)&ssv_cfg.rx_ip_align,            0,  __string2bool    , "1"},
 	{ "rx_ip_csum_off",       (void *)&ssv_cfg.rx_ip_csum_off,         0,  __string2bool    , "1"},
     { "rx_non_preempt_num",   (void *)&ssv_cfg.rx_non_preempt_num,     0,  __string2u32     , "32"},
@@ -399,7 +408,7 @@ struct ssv6xxx_cfg_cmd_table cfg_cmds[] = {
     { "sta_keep_alive_second", (void *)&ssv_cfg.sta_keep_alive_second,  0,  __string2u32    , "30"},
 #ifdef CONFIG_ENABLE_HOST_THERMAL
     { "disable_host_thermal",   (void *)&ssv_cfg.disable_host_thermal,     0,  __string2u32   , "0"},
-    { "temp_config_table", (void *)&ssv_cfg.temp_compensation_table[0], 0,  __string2str, NULL},
+    { "temp_config_table", (void *)&ssv_cfg.temp_compensation_table[0], sizeof(ssv_cfg.temp_compensation_table),  __string2str, NULL},
     { "host_thermal_debug",   (void *)&ssv_cfg.host_thermal_debug,     0,  __string2u32   , "0"},
 #endif
     { NULL, NULL, 0, NULL, NULL},

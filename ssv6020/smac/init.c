@@ -588,7 +588,8 @@ int ssv6xxx_load_firmware(struct ssv_hw *sh)
 
     if (cfgfirmwarepath != NULL)
     {
-        snprintf(temp_path, SSV_FIRMWARE_PATH_MAX, "%s%s", cfgfirmwarepath,
+        snprintf(temp_path, SSV_FIRMWARE_PATH_MAX, "%s%s%s", cfgfirmwarepath,
+                 (cfgfirmwarepath[0] && cfgfirmwarepath[strlen(cfgfirmwarepath) - 1] != '/') ? "/" : "",
                  firmware_name);
         // Open firmware by open file api
         ret = HAL_LOAD_FW(sh,temp_path, 1);
@@ -596,8 +597,10 @@ int ssv6xxx_load_firmware(struct ssv_hw *sh)
     }
     else if (sh->cfg.firmware_path[0] != 0x00)
     {
-        snprintf(temp_path, SSV_FIRMWARE_PATH_MAX, "%s%s",
-                 sh->cfg.firmware_path, firmware_name);
+        snprintf(temp_path, SSV_FIRMWARE_PATH_MAX, "%s%s%s",
+                 sh->cfg.firmware_path,
+                 (sh->cfg.firmware_path[strlen(sh->cfg.firmware_path) - 1] != '/') ? "/" : "",
+                 firmware_name);
          // Open firmware by open file api
         ret = HAL_LOAD_FW(sh,temp_path, 1);
         printk(KERN_INFO "Using firmware at %s\n", temp_path);

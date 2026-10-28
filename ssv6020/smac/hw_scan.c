@@ -137,12 +137,18 @@ static void ssv6xxx_build_hw_scan_param(struct ssv_softc *sc, u8 *src_addr, int 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3,0,8)
     scan_param->no_cck = req->no_cck;
 #endif
-    if (req->ie_len > 512) {
-        printk("Incorrect scan ie len = %d\n", (int)req->ie_len);
-        WARN_ON(1);
-    }
     scan_param->vif_idx = vif_idx;
     scan_param->wsid = sc->scan_wsid;
+
+    /* Both IE buffers hold 512 bytes and every copy below is a part of
+     * req->ie: scan without extra IEs rather than overrun them. */
+    if (req->ie_len > sizeof(sc->scan_ie_band2g)) {
+        printk("Incorrect scan ie len = %d\n", (int)req->ie_len);
+        WARN_ON(1);
+        sc->scan_ie_len_band2g = 0;
+        sc->scan_ie_len_band5g = 0;
+        return;
+    }
 
     if (sc->sh->cfg.hw_caps & SSV6200_HW_CAP_5GHZ) {
         int ie_offset = ssv6xxx_parse_duplicate_ie_elems(req->ie, req->ie_len);

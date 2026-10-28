@@ -107,7 +107,7 @@ extern struct ssv6xxx_cfg ssv_cfg;
     data = dp->data; })
 #endif
 
-static char *p2pStatus = "0";
+static char p2pStatus[256] = "0";
 
 static int ssv6xxx_p2p_open(struct inode *inode, struct file *filp)
 {
@@ -142,7 +142,7 @@ static ssize_t ssv6xxx_p2p_write(struct file *filp, const char __user *buffer,
     struct ssv_softc *sc = container_of(cmd_data, struct ssv_softc, cmd_data);
 	int enable = 0;
 	ssize_t retval= -ENOMEM;
-	if (*ppos != 0 || count > 255)
+	if (*ppos != 0 || count == 0 || count > 255)
 		return 0;
 	if (copy_from_user(p2pStatus, buffer, count)){
 		retval =  -EFAULT;
@@ -285,7 +285,7 @@ static ssize_t ssv6xxx_cmd_file_write(struct file *filp, const char __user *buff
     struct ssv_cmd_data *cmd_data = filp->private_data;
     int i = 0;
 
-    if (*ppos != 0 || count > 255)
+    if (*ppos != 0 || count == 0 || count > 255)
         return 0;
 
     ssv6xxx_cmd_buf = (char *)kzalloc(count, GFP_KERNEL);
@@ -485,7 +485,8 @@ static void _import_default_cfg (char *stacfgpath)
 	} while (read_len > 0); //0: eof, < 0: error
 
 skip:
-	filp_close(fp, NULL);
+	if (!IS_ERR_OR_NULL(fp))
+		filp_close(fp, NULL);
     if(NULL!=buf)
     {
         vfree((void *)buf);
@@ -620,17 +621,17 @@ int ssv_init_cli (const char *dev_name, struct ssv_cmd_data *cmd_data)
     if (!cmd_data->proc_dev_entry)
         printk("KERN_ERR" "Failed to create %s dev directory for CLI. \n", dev_name);
 
-    proc_file_entry = proc_create_data(PROC_SSV_CMD_ENTRY, S_IRUGO|S_IWUGO, cmd_data->proc_dev_entry, &ssv6xxx_cmd_fops, cmd_data);
+    proc_file_entry = proc_create_data(PROC_SSV_CMD_ENTRY, S_IRUGO|S_IWUSR, cmd_data->proc_dev_entry, &ssv6xxx_cmd_fops, cmd_data);
     if (proc_file_entry == NULL)
         printk(KERN_ERR "Failed to create %s for CLI.\n", PROC_SSV_CMD_ENTRY);
 
-    proc_file_entry = proc_create_data(PROC_SSV_DBG_ENTRY, S_IRUGO|S_IWUGO, cmd_data->proc_dev_entry, &ssv6xxx_dbg_fops, cmd_data);
+    proc_file_entry = proc_create_data(PROC_SSV_DBG_ENTRY, S_IRUGO|S_IWUSR, cmd_data->proc_dev_entry, &ssv6xxx_dbg_fops, cmd_data);
     if (proc_file_entry == NULL)
         printk(KERN_ERR "Failed to create %s for SSV DBG.\n", PROC_SSV_DBG_ENTRY);
-    proc_file_entry = proc_create_data(PROC_SSV_FREQ_ENTRY, S_IRUGO|S_IWUGO, cmd_data->proc_dev_entry, &ssv6xxx_freq_fops, cmd_data);
+    proc_file_entry = proc_create_data(PROC_SSV_FREQ_ENTRY, S_IRUGO|S_IWUSR, cmd_data->proc_dev_entry, &ssv6xxx_freq_fops, cmd_data);
     if (proc_file_entry == NULL)
         printk(KERN_ERR "Failed to create %s for SSV FREQ.\n", PROC_SSV_FREQ_ENTRY);
-    proc_file_entry = proc_create_data(PROC_SSV_P2P_ENTRY, S_IRUGO|S_IWUGO, cmd_data->proc_dev_entry, &ssv6xxx_p2p_fops, cmd_data);
+    proc_file_entry = proc_create_data(PROC_SSV_P2P_ENTRY, S_IRUGO|S_IWUSR, cmd_data->proc_dev_entry, &ssv6xxx_p2p_fops, cmd_data);
     if (proc_file_entry == NULL)
         printk(KERN_ERR "Failed to create %s for SSV P2P.\n", PROC_SSV_P2P_ENTRY);
 
